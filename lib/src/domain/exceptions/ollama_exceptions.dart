@@ -18,4 +18,15 @@ class ToolsNotAllowed implements Exception {
   
   @override
   String toString() => 'ToolsNotAllowed: $message';
+}
+
+/// Exception thrown when trying to use images/vision on a model that doesn't support it
+class VisionNotAllowed implements Exception {
+  final String message;
+  final String model;
+  
+  const VisionNotAllowed(this.model, this.message);
+  
+  @override
+  String toString() => 'VisionNotAllowed: $message';
 } 

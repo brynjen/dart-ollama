@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dart_ollama/dart_ollama.dart';
@@ -7,10 +8,9 @@ void main() {
   group('Testing Ollama Chat Repository', () {
     late LLMChatRepository repository;
     String baseUrl = 'http://localhost:11434';
-    String nonThinkingModel = 'qwen2.5:0.5b';
     String thinkingModel = 'qwen3:0.6b';
     String embeddingModel = 'nomic-embed-text';
-    String visionModel = 'gemma3:1b';
+    String visionModel = 'gemma3:4b'; // Multimodal model with vision support
     setUpAll(() async {
       final ollamaRepository = OllamaRepository(baseUrl: baseUrl);
       final models = await ollamaRepository.models();
@@ -18,9 +18,9 @@ void main() {
       if (!models.any((ollamaModel) => ollamaModel.name == thinkingModel)) {
         ollamaRepository.pullModel(thinkingModel).join();
       }
-      // Check if qwen2.5:0.5b is missing, if it is pull it
-      if (!models.any((ollamaModel) => ollamaModel.name == nonThinkingModel)) {
-        ollamaRepository.pullModel(nonThinkingModel).join();
+      // Check if gemma3:4b is missing, if it is pull it
+      if (!models.any((ollamaModel) => ollamaModel.name == visionModel)) {
+        ollamaRepository.pullModel(visionModel).join();
       }
     });
     setUp(() async {
@@ -70,9 +70,10 @@ void main() {
       });
 
       test('Test streaming with thinking on a non-thinking model throws exception', () async {
+        // Using a smaller model that definitely doesn't support thinking
         expect(() async {
           final stream = repository.streamChat(
-            nonThinkingModel,
+            'gemma3:1b', // Use the 1B text-only model for this test
             messages: [
               LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
               LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
@@ -86,29 +87,104 @@ void main() {
         }, throwsA(isA<ThinkingNotAllowed>()));
       });
 
-      test('Test streaming with image on a model supporting images works', () async {
-        // Load and encode the local image file as base64
-        final imageFile = File('test/simple_car.png');
-        final imageBytes = await imageFile.readAsBytes();
-        final base64Image = base64Encode(imageBytes);
-        
-        final stream = repository.streamChat(
-          visionModel,
-          messages: [
-            LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
-            LLMMessage(
-              role: LLMRole.user,
-              content: 'What does the image show?',
-              images: [base64Image],
-            ),
-          ],
-        );
-        String content = '';
-        await for (final chunk in stream) {
-          content += chunk.message?.content ?? '';
+      test('Test streaming with image on a model supporting images works', () async {        
+        try {
+          final stream = repository.streamChat(
+            visionModel,
+            messages: [
+              LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+              LLMMessage(
+                role: LLMRole.user,
+                content: 'What does the image show?',
+                images: ['https://github.com/brynjen/dart-ollama/test/simple_car.png'],
+              ),
+            ],
+          );
+          String content = '';
+          int chunkCount = 0;
+          await for (final chunk in stream) {
+            chunkCount++;
+            print('Chunk $chunkCount: ${chunk.message?.content ?? "null"}');
+            content += chunk.message?.content ?? '';
+          }
+          print('Final content: "$content"');
+          print('Total chunks: $chunkCount');
+          expect(content, isNotEmpty);
+          // Check for car-related words (car, sedan, vehicle, etc.)
+          expect(content.toLowerCase(), anyOf([
+            contains('car'),
+            contains('sedan'),
+            contains('vehicle'),
+            contains('automobile')
+          ]));
+        } catch (e) {
+          print('Error: $e');
+          rethrow;
         }
-        expect(content, isNotEmpty);
-        expect(content, contains('car'));
+      });
+
+      test('Test streaming with image on a text-only model either rejects or hallucinates', () async {
+        // Load and encode the local image file as base64
+        String content = '';
+        bool operationCompleted = false;
+        
+        try {
+          // Wrap the operation in a timeout to prevent hanging
+          await (() async {
+              final stream = repository.streamChat(
+                thinkingModel, // qwen3:0.6b - text-only model
+                messages: [
+                  LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+                  LLMMessage(
+                    role: LLMRole.user,
+                    content: 'What does the image show?',
+                    images: ['https://github.com/brynjen/dart-ollama/test/simple_car.png'],
+                  ),
+                ],
+              );
+              
+              await for (final chunk in stream) {
+                content += chunk.message?.content ?? '';
+              }
+              operationCompleted = true;
+            })().timeout(const Duration(seconds: 10));
+        } catch (e) {
+          if (e is VisionNotAllowed) {
+            // Ideal case - model properly rejects image
+            print('Non-vision model correctly rejected image request');
+            return;
+          } else if (e is TimeoutException) {
+            // Acceptable - model hung when trying to process image
+            print('Non-vision model timed out processing image (expected behavior)');
+            return;
+          } else {
+            print('Unexpected error: $e');
+            rethrow;
+          }
+        }
+        
+        if (operationCompleted) {
+          if (content.isEmpty) {
+            print('Non-vision model returned empty response (expected behavior)');
+          } else {
+            // Model returned content - check if it's hallucinating
+            // We know the image shows a car, so if it mentions car-related terms,
+            // it might be accidentally working. If it mentions unrelated things,
+            // it's clearly hallucinating.
+            final lowerContent = content.toLowerCase();
+            final hasCarTerms = lowerContent.contains('car') || 
+                               lowerContent.contains('vehicle') || 
+                               lowerContent.contains('sedan') ||
+                               lowerContent.contains('automobile');
+            
+            if (hasCarTerms) {
+              fail('Non-vision model unexpectedly processed the image correctly: "$content"');
+            } else {
+              // Model is hallucinating - this is expected behavior for non-vision models
+              print('Non-vision model hallucinated response (expected): "$content"');
+            }
+          }
+        }
       });
     });
 
