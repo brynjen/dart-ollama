@@ -73,7 +73,7 @@ void main() {
         // Using a smaller model that definitely doesn't support thinking
         expect(() async {
           final stream = repository.streamChat(
-            'gemma3:1b', // Use the 1B text-only model for this test
+            'gemma3:4b', // Use the gemma text-only model for this test
             messages: [
               LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
               LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
@@ -87,7 +87,12 @@ void main() {
         }, throwsA(isA<ThinkingNotAllowed>()));
       });
 
-      test('Test streaming with image on a model supporting images works', () async {        
+      test('Test streaming with image on a model supporting images works', () async {
+        // Load and encode the local image file as base64
+        final imageFile = File('test/simple_car.png'); // Back to original image
+        final imageBytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(imageBytes);
+        
         try {
           final stream = repository.streamChat(
             visionModel,
@@ -96,19 +101,15 @@ void main() {
               LLMMessage(
                 role: LLMRole.user,
                 content: 'What does the image show?',
-                images: ['https://github.com/brynjen/dart-ollama/test/simple_car.png'],
+                images: [base64Image],
               ),
             ],
           );
           String content = '';
-          int chunkCount = 0;
           await for (final chunk in stream) {
-            chunkCount++;
-            print('Chunk $chunkCount: ${chunk.message?.content ?? "null"}');
             content += chunk.message?.content ?? '';
           }
-          print('Final content: "$content"');
-          print('Total chunks: $chunkCount');
+          print('Response: "$content"');
           expect(content, isNotEmpty);
           // Check for car-related words (car, sedan, vehicle, etc.)
           expect(content.toLowerCase(), anyOf([
@@ -123,68 +124,31 @@ void main() {
         }
       });
 
-      test('Test streaming with image on a text-only model either rejects or hallucinates', () async {
+      test('Test streaming with image on a text-only model rejects chat', () async {
         // Load and encode the local image file as base64
-        String content = '';
-        bool operationCompleted = false;
+        final imageFile = File('test/simple_car.png');
+        final imageBytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(imageBytes);
         
-        try {
-          // Wrap the operation in a timeout to prevent hanging
-          await (() async {
-              final stream = repository.streamChat(
-                thinkingModel, // qwen3:0.6b - text-only model
-                messages: [
-                  LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
-                  LLMMessage(
-                    role: LLMRole.user,
-                    content: 'What does the image show?',
-                    images: ['https://github.com/brynjen/dart-ollama/test/simple_car.png'],
-                  ),
-                ],
-              );
-              
-              await for (final chunk in stream) {
-                content += chunk.message?.content ?? '';
-              }
-              operationCompleted = true;
-            })().timeout(const Duration(seconds: 10));
-        } catch (e) {
-          if (e is VisionNotAllowed) {
-            // Ideal case - model properly rejects image
-            print('Non-vision model correctly rejected image request');
-            return;
-          } else if (e is TimeoutException) {
-            // Acceptable - model hung when trying to process image
-            print('Non-vision model timed out processing image (expected behavior)');
-            return;
-          } else {
-            print('Unexpected error: $e');
-            rethrow;
+        // Test that a text-only model throws VisionNotAllowed when images are provided
+        expect(() async {
+          final stream = repository.streamChat(
+            thinkingModel, // qwen3:0.6b - text-only model
+            messages: [
+              LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+              LLMMessage(
+                role: LLMRole.user,
+                content: 'What does the image show?',
+                images: [base64Image],
+              ),
+            ],
+          );
+          
+          await for (final _ in stream) {
+            // This should not be reached
           }
-        }
-        
-        if (operationCompleted) {
-          if (content.isEmpty) {
-            print('Non-vision model returned empty response (expected behavior)');
-          } else {
-            // Model returned content - check if it's hallucinating
-            // We know the image shows a car, so if it mentions car-related terms,
-            // it might be accidentally working. If it mentions unrelated things,
-            // it's clearly hallucinating.
-            final lowerContent = content.toLowerCase();
-            final hasCarTerms = lowerContent.contains('car') || 
-                               lowerContent.contains('vehicle') || 
-                               lowerContent.contains('sedan') ||
-                               lowerContent.contains('automobile');
-            
-            if (hasCarTerms) {
-              fail('Non-vision model unexpectedly processed the image correctly: "$content"');
-            } else {
-              // Model is hallucinating - this is expected behavior for non-vision models
-              print('Non-vision model hallucinated response (expected): "$content"');
-            }
-          }
-        }
+          fail('Should not reach here as text-only model should reject vision requests');
+        }, throwsA(isA<VisionNotAllowed>()));
       });
     });
 

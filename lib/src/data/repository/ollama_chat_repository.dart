@@ -34,6 +34,33 @@ class OllamaChatRepository extends LLMChatRepository {
 
   Uri get uri => Uri.parse('$baseUrl/api/chat');
 
+  /// Check if a model supports vision by querying its model info
+  /// Vision models have "vision" in their capabilities array
+  Future<bool> _supportsVision(String model) async {
+    try {
+      final response = await _sendRequest('POST', Uri.parse('$baseUrl/api/show'), 
+          body: {'model': model});
+      
+      if (response.statusCode == 200) {
+        final body = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(body);
+        
+        // Check if model has vision capability
+        final capabilities = json['capabilities'] as List<dynamic>?;
+        if (capabilities != null) {
+          return capabilities.contains('vision');
+        }
+        
+      }
+      
+      // If we can't determine, assume it doesn't support vision to be safe
+      return false;
+    } catch (e) {
+      // If we can't determine, assume it doesn't support vision to be safe
+      return false;
+    }
+  }
+
   @override
   Stream<LLMChunk> streamChat(
     String model, {
@@ -42,8 +69,12 @@ class OllamaChatRepository extends LLMChatRepository {
     int? toolAttempts,
     bool think = false,
   }) async* {
-    // Check if any message contains images
-    final hasImages = messages.any((msg) => msg.images != null && msg.images!.isNotEmpty);
+    // If images are present, check if the model supports vision
+    if (messages.any((msg) => msg.images != null && msg.images!.isNotEmpty)) {
+      if (!(await _supportsVision(model))) {
+        throw VisionNotAllowed(model, 'Model $model does not support vision/images');
+      }
+    }
     
     final body = {
       'model': model,
@@ -54,11 +85,7 @@ class OllamaChatRepository extends LLMChatRepository {
     if (tools.isNotEmpty) {
       body['tools'] = tools.map((tool) => tool.toJson).toList(growable: false);
     }
-    
-    print('Debug: Sending request to $uri with body: ${json.encode(body)}');
-    
     final response = await _sendRequest('POST', uri, body: body);
-    print('Debug: Response status code: ${response.statusCode}');
     
     try {
       switch (response.statusCode) {
@@ -67,12 +94,9 @@ class OllamaChatRepository extends LLMChatRepository {
         case HttpStatus.badRequest:
           // Handle 400 errors which might be feature not supported
           final errorBody = await response.transform(utf8.decoder).join();
-          print('Debug: 400 error body: $errorBody');
-          await _handleBadRequestError(errorBody, model, think, tools.isNotEmpty, hasImages);
+          await _handleBadRequestError(errorBody, model, think, tools.isNotEmpty);
           break;
         default:
-          final errorBody = await response.transform(utf8.decoder).join();
-          print('Debug: Unexpected status ${response.statusCode}, body: $errorBody');
           throw response;
       }
     } on HttpClientResponse catch (_) {
@@ -81,7 +105,7 @@ class OllamaChatRepository extends LLMChatRepository {
   }
 
   /// Handle 400 Bad Request errors and throw appropriate exceptions
-  Future<void> _handleBadRequestError(String errorBody, String model, bool thinkRequested, bool toolsRequested, bool visionRequested) async {
+  Future<void> _handleBadRequestError(String errorBody, String model, bool thinkRequested, bool toolsRequested) async {
     try {
       final errorData = json.decode(errorBody);
       final errorMessage = errorData['error'] as String? ?? '';
@@ -96,13 +120,6 @@ class OllamaChatRepository extends LLMChatRepository {
         throw ToolsNotAllowed(model, 'Model $model does not support tools');
       }
       
-      // Check for vision/image not supported error
-      if (visionRequested && (errorMessage.contains('missing data required for image input') || 
-          errorMessage.contains('does not support images') || 
-          errorMessage.contains('image input'))) {
-        throw VisionNotAllowed(model, 'Model $model does not support vision/images');
-      }
-      
       // Check for chat not supported error (like embedding models)
       if (errorMessage.contains('does not support chat')) {
         throw Exception('Model $model does not support chat - use a chat/completion model instead');
@@ -111,7 +128,7 @@ class OllamaChatRepository extends LLMChatRepository {
       // If it's not a specific feature support error, throw a generic error
       throw Exception('Bad request: $errorMessage');
     } catch (e) {
-      if (e is ThinkingNotAllowed || e is ToolsNotAllowed || e is VisionNotAllowed) {
+      if (e is ThinkingNotAllowed || e is ToolsNotAllowed ) {
         rethrow;
       }
       throw Exception('Bad request: $errorBody');
@@ -127,7 +144,6 @@ class OllamaChatRepository extends LLMChatRepository {
     if (body != null) {
       final bodyJson = json.encode(body);
       final bodyBytes = utf8.encode(bodyJson);
-      print('Debug: Request body size: ${bodyJson.length} characters (${bodyBytes.length} bytes)');
       
       // Set content length for large payloads
       request.headers.add(HttpHeaders.contentLengthHeader, bodyBytes.length.toString());
@@ -152,7 +168,6 @@ class OllamaChatRepository extends LLMChatRepository {
     return request.close().timeout(
       timeoutDuration,
       onTimeout: () {
-        print('Debug: Request timed out after ${timeoutDuration.inSeconds} seconds');
         request.abort();
         throw TimeoutException('Request timed out', timeoutDuration);
       },
@@ -169,20 +184,11 @@ class OllamaChatRepository extends LLMChatRepository {
   }) async* {
     List<LLMMessage> workingMessages = List.from(messages);
     List<dynamic> collectedToolCalls = [];
-    int lineCount = 0;
-
-    print('Debug: Starting to process stream');
 
     await for (final line in response.transform(utf8.decoder).transform(const LineSplitter())) {
-      lineCount++;
-      print('Debug: Line $lineCount: "$line"');
-      
       if (line.isNotEmpty) {
         try {
-          final jsonData = json.decode(line);
-          print('Debug: Parsed JSON: $jsonData');
-          final chunk = OllamaChunk.fromJson(jsonData);
-          print('Debug: Created chunk: ${chunk.message?.content}');
+          final chunk = OllamaChunk.fromJson(json.decode(line));
           yield chunk;
 
           if (chunk.message?.toolCalls != null && chunk.message!.toolCalls!.isNotEmpty) {
@@ -205,13 +211,10 @@ class OllamaChatRepository extends LLMChatRepository {
               return;
             }
           }
-        } catch (e) {
-          print('Debug: Error parsing line "$line": $e');
+        } catch (_) {
         }
       }
     }
-    
-    print('Debug: Stream processing completed. Total lines: $lineCount');
   }
 
   @override
