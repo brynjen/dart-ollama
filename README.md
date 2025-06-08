@@ -1,7 +1,5 @@
 [![CI](https://github.com/brynjen/dart-ollama/actions/workflows/ci.yaml/badge.svg)](https://github.com/brynjen/dart-ollama/actions/workflows/ci.yaml)
 
-Dart-Ollama
-
 Handlng LLM chat streaming towards Ollama or ChatGPT, letting you easier create
 chat bots in dart.
 
@@ -15,6 +13,7 @@ chat bots in dart.
 ## Getting started
 For use with Ollama you need to have it running somewhere and have the url to it.
 Go to https://ollama.com/ for details, it has an easy install for all operating systems.
+It also requires models to download. For a small and easy model, use qwen3:0.6b as an example.
 If you want to use it for ChatGPT, add an apiKey to the ChatGPTRepository and it will use
 that instead. Remember to not push your api key to github, add an .env file and put it there
 

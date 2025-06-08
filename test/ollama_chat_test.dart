@@ -1,12 +1,11 @@
 import 'package:dart_ollama/dart_ollama.dart';
-import 'package:dart_ollama/data/repository/ollama_repository.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('Testing the working of the library against a local ollama instance', () {
+  group('Testing Ollama Chat Repository', () {
     late LLMChatRepository repository;
     String baseUrl = 'http://localhost:11434';
-    String nonThinkingModel = 'qwen2:0.5b';
+    String nonThinkingModel = 'qwen2.5:0.5b';
     String thinkingModel = 'qwen3:0.6b';
     String embeddingModel = 'nomic-embed-text';
     setUpAll(() async {
@@ -16,7 +15,7 @@ void main() {
       if (!models.any((ollamaModel) => ollamaModel.name == thinkingModel)) {
         ollamaRepository.pullModel(thinkingModel).join();
       }
-      // Check if qwen2:0.5b is missing, if it is pull it
+      // Check if qwen2.5:0.5b is missing, if it is pull it
       if (!models.any((ollamaModel) => ollamaModel.name == nonThinkingModel)) {
         ollamaRepository.pullModel(nonThinkingModel).join();
       }
@@ -25,7 +24,7 @@ void main() {
       repository = OllamaChatRepository(baseUrl: baseUrl);
     });
 
-    group('General tests', () {
+    group('Chat tests', () {
       test('Test regular thinking streaming works', () async {
         final stream = repository.streamChat(
           thinkingModel,
@@ -66,6 +65,23 @@ void main() {
         expect(content, isNotEmpty);
         print('Content: $content');
       });
+
+      test('Test streaming with thinking on a non-thinking model throws exception', () async {
+        expect(() async {
+          final stream = repository.streamChat(
+            nonThinkingModel,
+            messages: [
+              LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+              LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
+            ],
+            think: true,
+          );
+          await for (final _ in stream) {
+            // This should not be reached
+          }
+          fail('Should not reach here as model does not support thinking');
+        }, throwsA(isA<ThinkingNotAllowed>()));
+      });
     });
 
     group('Tool tests', () {
@@ -86,7 +102,6 @@ void main() {
         int chunkCount = 0;
         await for (final chunk in stream) {
           chunkCount++;
-
           thinking += chunk.message?.thinking ?? '';
           content += chunk.message?.content ?? '';
         }
@@ -98,6 +113,28 @@ void main() {
         print('Thinking: $thinking');
         print('Content: $content');
       });
+
+      test('Test using tools on a non-tools model throws error', () async {
+        // Note: Using embedding model which doesn't support chat at all
+        // Most modern chat models actually support tools, so this tests the broader case
+        final tool = TestCalculatorTool();
+        repository = OllamaChatRepository(baseUrl: baseUrl, tools: [tool]);
+
+        expect(() async {
+          final stream = repository.streamChat(
+            embeddingModel, // This model doesn't support chat at all
+            messages: [
+              LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+              LLMMessage(role: LLMRole.user, content: 'What is 2 + 2?'),
+            ],
+          );
+          await for (final _ in stream) {
+            // This should not be reached
+          }
+          fail('Should not reach here as model does not support chat');
+        }, throwsA(isA<Exception>())); // Changed to generic Exception since this model doesn't support chat at all
+      });
+
       test('Test multiple tools works with thinking model', () async {
         final tool = TestCalculatorTool();
         final formatterTool = TestResultFormatterTool();

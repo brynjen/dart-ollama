@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dart_ollama/data/dto/ollama_embedding_response.dart';
 import 'package:dart_ollama/data/dto/ollama_response.dart';
+import 'package:dart_ollama/domain/exceptions/ollama_exceptions.dart';
 import 'package:dart_ollama/domain/model/llm_chunk.dart';
 import 'package:dart_ollama/domain/model/llm_embedding.dart';
 import 'package:dart_ollama/domain/model/llm_message.dart';
@@ -46,19 +47,53 @@ class OllamaChatRepository extends LLMChatRepository {
     if (tools.isNotEmpty) {
       body['tools'] = tools.map((tool) => tool.toJson).toList(growable: false);
     }
+    
     final response = await _sendRequest('POST', uri, body: body);
     try {
       switch (response.statusCode) {
         case HttpStatus.ok:
           yield* toLLMStream(response, model: model, messages: messages, toolAttempts: toolAttempts ?? maxToolAttempts);
+        case HttpStatus.badRequest:
+          // Handle 400 errors which might be feature not supported
+          final errorBody = await response.transform(utf8.decoder).join();
+          await _handleBadRequestError(errorBody, model, think, tools.isNotEmpty);
+          break;
         default:
-          // TODO: Proper error handling
-          stdout.writeln('\nError generating stream: ${response.statusCode}');
           throw response;
       }
     } on HttpClientResponse catch (_) {
-      //final error = await e.transform(utf8.decoder).join();
       rethrow;
+    }
+  }
+
+  /// Handle 400 Bad Request errors and throw appropriate exceptions
+  Future<void> _handleBadRequestError(String errorBody, String model, bool thinkRequested, bool toolsRequested) async {
+    try {
+      final errorData = json.decode(errorBody);
+      final errorMessage = errorData['error'] as String? ?? '';
+      
+      // Check for thinking not supported error
+      if (thinkRequested && errorMessage.contains('does not support thinking')) {
+        throw ThinkingNotAllowed(model, 'Model $model does not support thinking');
+      }
+      
+      // Check for tools not supported error  
+      if (toolsRequested && errorMessage.contains('does not support tools')) {
+        throw ToolsNotAllowed(model, 'Model $model does not support tools');
+      }
+      
+      // Check for chat not supported error (like embedding models)
+      if (errorMessage.contains('does not support chat')) {
+        throw Exception('Model $model does not support chat - use a chat/completion model instead');
+      }
+      
+      // If it's not a specific feature support error, throw a generic error
+      throw Exception('Bad request: $errorMessage');
+    } catch (e) {
+      if (e is ThinkingNotAllowed || e is ToolsNotAllowed) {
+        rethrow;
+      }
+      throw Exception('Bad request: $errorBody');
     }
   }
 
