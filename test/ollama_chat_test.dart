@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:dart_ollama/dart_ollama.dart';
 import 'package:test/test.dart';
 
@@ -8,6 +10,7 @@ void main() {
     String nonThinkingModel = 'qwen2.5:0.5b';
     String thinkingModel = 'qwen3:0.6b';
     String embeddingModel = 'nomic-embed-text';
+    String visionModel = 'gemma3:1b';
     setUpAll(() async {
       final ollamaRepository = OllamaRepository(baseUrl: baseUrl);
       final models = await ollamaRepository.models();
@@ -81,6 +84,31 @@ void main() {
           }
           fail('Should not reach here as model does not support thinking');
         }, throwsA(isA<ThinkingNotAllowed>()));
+      });
+
+      test('Test streaming with image on a model supporting images works', () async {
+        // Load and encode the local image file as base64
+        final imageFile = File('test/simple_car.png');
+        final imageBytes = await imageFile.readAsBytes();
+        final base64Image = base64Encode(imageBytes);
+        
+        final stream = repository.streamChat(
+          visionModel,
+          messages: [
+            LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+            LLMMessage(
+              role: LLMRole.user,
+              content: 'What does the image show?',
+              images: [base64Image],
+            ),
+          ],
+        );
+        String content = '';
+        await for (final chunk in stream) {
+          content += chunk.message?.content ?? '';
+        }
+        expect(content, isNotEmpty);
+        expect(content, contains('car'));
       });
     });
 

@@ -1,5 +1,4 @@
-import 'package:dart_ollama/data/repository/ollama_repository.dart';
-import 'package:dart_ollama/data/dto/ollama_model.dart';
+import 'package:dart_ollama/dart_ollama.dart';
 import 'package:test/test.dart';
 
 void main() {

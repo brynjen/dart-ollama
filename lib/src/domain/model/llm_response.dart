@@ -1,4 +1,4 @@
-import 'package:dart_ollama/domain/model/llm_tool_call.dart';
+import 'llm_tool_call.dart';
 
 class LLMResponse {
   LLMResponse({

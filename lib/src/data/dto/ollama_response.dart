@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:dart_ollama/domain/model/llm_chunk.dart';
-import 'package:dart_ollama/domain/model/llm_message.dart';
-import 'package:dart_ollama/domain/model/llm_response.dart';
-import 'package:dart_ollama/domain/model/llm_tool_call.dart';
+import '../../domain/model/llm_chunk.dart';
+import '../../domain/model/llm_message.dart';
+import '../../domain/model/llm_response.dart';
+import '../../domain/model/llm_tool_call.dart';
 
 class OllamaResponse extends LLMResponse {
   OllamaResponse({

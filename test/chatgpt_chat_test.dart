@@ -1,10 +1,6 @@
 import 'dart:io';
 
-import 'package:dart_ollama/data/repository/chatgpt_chat_repository.dart';
-import 'package:dart_ollama/domain/model/llm_message.dart';
-import 'package:dart_ollama/domain/model/llm_tool.dart';
-import 'package:dart_ollama/domain/model/llm_tool_param.dart';
-import 'package:dart_ollama/domain/repository/llm_chat_repository.dart';
+import 'package:dart_ollama/dart_ollama.dart';
 import 'package:test/test.dart';
 import 'package:dotenv/dotenv.dart';
 

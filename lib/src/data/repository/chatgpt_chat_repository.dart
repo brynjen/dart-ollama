@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_ollama/dart_ollama.dart';
-import 'package:dart_ollama/data/dto/gpt_embedding_response.dart';
-import 'package:dart_ollama/data/dto/gpt_response.dart';
-import 'package:dart_ollama/data/dto/gpt_stream_decoder.dart';
-import 'package:dart_ollama/domain/model/llm_embedding.dart';
+import '../../domain/repository/llm_chat_repository.dart';
+import '../../domain/model/llm_chunk.dart';
+import '../../domain/model/llm_message.dart';
+import '../../domain/model/llm_tool.dart';
+import '../dto/gpt_embedding_response.dart';
+import '../dto/gpt_response.dart';
+import '../dto/gpt_stream_decoder.dart';
+import '../../domain/model/llm_embedding.dart';
 
 class ChatGPTChatRepository extends LLMChatRepository {
   ChatGPTChatRepository({

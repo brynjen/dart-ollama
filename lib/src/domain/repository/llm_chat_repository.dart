@@ -1,7 +1,7 @@
-import 'package:dart_ollama/domain/model/llm_chunk.dart';
-import 'package:dart_ollama/domain/model/llm_embedding.dart';
-import 'package:dart_ollama/domain/model/llm_message.dart';
-import 'package:dart_ollama/domain/model/llm_tool.dart';
+import '../model/llm_chunk.dart';
+import '../model/llm_embedding.dart';
+import '../model/llm_message.dart';
+import '../model/llm_tool.dart';
 
 abstract class LLMChatRepository {
   /// The tools available to the repository

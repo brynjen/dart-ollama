@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_ollama/data/dto/ollama_embedding_response.dart';
-import 'package:dart_ollama/data/dto/ollama_response.dart';
-import 'package:dart_ollama/domain/exceptions/ollama_exceptions.dart';
-import 'package:dart_ollama/domain/model/llm_chunk.dart';
-import 'package:dart_ollama/domain/model/llm_embedding.dart';
-import 'package:dart_ollama/domain/model/llm_message.dart';
-import 'package:dart_ollama/domain/model/llm_tool.dart';
-import 'package:dart_ollama/domain/repository/llm_chat_repository.dart';
+import '../dto/ollama_embedding_response.dart';
+import '../dto/ollama_response.dart';
+import '../../domain/exceptions/ollama_exceptions.dart';
+import '../../domain/model/llm_chunk.dart';
+import '../../domain/model/llm_embedding.dart';
+import '../../domain/model/llm_message.dart';
+import '../../domain/model/llm_tool.dart';
+import '../../domain/repository/llm_chat_repository.dart';
 
 class OllamaChatRepository extends LLMChatRepository {
   OllamaChatRepository({

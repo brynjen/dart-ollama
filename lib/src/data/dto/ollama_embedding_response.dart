@@ -1,4 +1,4 @@
-import 'package:dart_ollama/domain/model/llm_embedding.dart';
+import '../../domain/model/llm_embedding.dart';
 
 class OllamaEmbeddingResponse {
   OllamaEmbeddingResponse({

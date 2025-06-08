@@ -1,5 +1,5 @@
-import 'package:dart_ollama/domain/model/llm_message.dart';
-import 'package:dart_ollama/domain/model/llm_tool_call.dart';
+import 'llm_message.dart';
+import 'llm_tool_call.dart';
 
 class LLMChunk {
   LLMChunk({

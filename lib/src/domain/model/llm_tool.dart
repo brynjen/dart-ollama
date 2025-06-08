@@ -1,4 +1,4 @@
-import 'package:dart_ollama/domain/model/llm_tool_param.dart';
+import 'llm_tool_param.dart';
 
 abstract class LLMTool {
   /// The name of the tool, used to match up with the function call

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_ollama/data/dto/ollama_model.dart';
+import '../dto/ollama_model.dart';
 
 /// Handles communicating with Ollama letting you pull models and check if they are there
 class OllamaRepository {

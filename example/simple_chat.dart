@@ -23,7 +23,7 @@ Future<void> main() async {
   }
   final stream = chatRepository.streamChat('qwen3:0.6b',
     messages: [
-      LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+      LLMMessage(role: LLMRole.system, content: 'Answer short and concise'),
       LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
     ],
     think: true,
