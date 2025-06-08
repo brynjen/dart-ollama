@@ -163,7 +163,7 @@ class OllamaChatRepository extends LLMChatRepository {
     // Add timeout for large requests - adjust based on payload size
     final timeoutDuration = body != null && json.encode(body).length > 1024 * 1024 
         ? const Duration(seconds: 300) // 5 minutes for large images
-        : const Duration(seconds: 60);
+        : const Duration(minutes: 2);
         
     return request.close().timeout(
       timeoutDuration,
