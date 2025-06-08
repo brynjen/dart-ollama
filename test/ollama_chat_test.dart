@@ -8,9 +8,9 @@ void main() {
   group('Testing Ollama Chat Repository', () {
     late LLMChatRepository repository;
     String baseUrl = 'http://localhost:11434';
-    String thinkingModel = 'qwen3:0.6b';
-    String embeddingModel = 'nomic-embed-text';
-    String visionModel = 'gemma3:4b'; // Multimodal model with vision support
+    String thinkingModel = 'qwen3:0.6b'; // Thinking chat model, supports tools, thinking and completion
+    String embeddingModel = 'nomic-embed-text'; // Embedding model, supports embedding
+    String visionModel = 'gemma3:4b'; // Multimodal model with vision support, supports vision and completion
     setUpAll(() async {
       final ollamaRepository = OllamaRepository(baseUrl: baseUrl);
       final models = await ollamaRepository.models();
