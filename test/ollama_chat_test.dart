@@ -122,7 +122,7 @@ void main() {
           print('Error: $e');
           rethrow;
         }
-      });
+      }, skip: 'Vision model (gemma3:4b) too large for GitHub Actions');
 
       test('Test streaming with image on a text-only model rejects chat', () async {
         // Load and encode the local image file as base64
@@ -149,7 +149,7 @@ void main() {
           }
           fail('Should not reach here as text-only model should reject vision requests');
         }, throwsA(isA<VisionNotAllowed>()));
-      });
+      }, skip: 'Vision test requires large model not suitable for GitHub Actions');
     });
 
     group('Tool tests', () {
