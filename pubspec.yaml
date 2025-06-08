@@ -1,0 +1,15 @@
+name: dart_ollama
+description: A simple ollama and gpt wrapper for dart. Supports tools and thinking.
+version: 0.1.0
+repository: https://github.com/brynjen/dart-ollama
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  # path: ^1.8.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.24.0
+  dotenv: ^4.2.0

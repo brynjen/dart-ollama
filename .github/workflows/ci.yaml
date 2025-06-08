@@ -1,0 +1,67 @@
+# .github/workflows/ci.yaml
+name: Manual Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "Ollama tags to pull (comma-separated)"
+        required: false
+        default: "qwen3:0.6b,qwen2:0.5b,nomic-embed-text"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - "11434:11434"
+        options: >-
+          --health-cmd="ollama list || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      OLLAMA_BASE_URL: http://localhost:11434
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.8.0"
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+
+      # -------- Pull every requested model ----------
+      - name: Pull Ollama models
+        run: |
+          IFS=',' read -ra TAGS <<< "${{ github.event.inputs.models || 'qwen3:0.6b,qwen2:0.5b,nomic-embed-text' }}"
+          for tag in "${TAGS[@]}"; do
+            echo "Pulling $tag …"
+            # POST /api/pull {"name":"model:tag"}
+            curl -fsS -X POST http://localhost:11434/api/pull \
+                 -H "Content-Type: application/json" \
+                 -d "{\"name\":\"$tag\"}" \
+              || { echo "Pull failed for $tag" >&2; exit 1; }
+          done
+
+      - run: dart pub get
+
+      - name: Run tests (unit + integration)
+        run: dart test --coverage=coverage
+
+      - name: Upload coverage reports to Codecov
+          uses: codecov/codecov-action@v5
+          with:
+            token: ${{ secrets.CODECOV_TOKEN }}
+
+      - uses: codecov/codecov-action@v4
