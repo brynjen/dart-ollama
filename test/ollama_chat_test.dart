@@ -248,7 +248,7 @@ void main() {
         print('Embeddings: ${embeddings.first.embedding}');
       });
     });
-  });
+  }, timeout: Timeout(Duration(minutes: 2)));
 }
 
 class TestCalculatorTool extends LLMTool {
