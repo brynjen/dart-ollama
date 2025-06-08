@@ -9,6 +9,7 @@ void main() {
     late LLMChatRepository repository;
     String baseUrl = 'http://localhost:11434';
     String thinkingModel = 'qwen3:0.6b'; // Thinking chat model, supports tools, thinking and completion
+    String nonThinkingModel = 'qwen2.5:0.5b'; // Non-thinking chat model, supports completion
     String embeddingModel = 'nomic-embed-text'; // Embedding model, supports embedding
     String visionModel = 'gemma3:4b'; // Multimodal model with vision support, supports vision and completion
     setUpAll(() async {
@@ -17,6 +18,10 @@ void main() {
       // Check if qwen3:0.6b is missing, if it is pull it
       if (!models.any((ollamaModel) => ollamaModel.name == thinkingModel)) {
         ollamaRepository.pullModel(thinkingModel).join();
+      }
+      // Check if qwen2.5:0.5b is missing, if it is pull it
+      if (!models.any((ollamaModel) => ollamaModel.name == nonThinkingModel)) {
+        ollamaRepository.pullModel(nonThinkingModel).join();
       }
       // Check if gemma3:4b is missing, if it is pull it
       if (!models.any((ollamaModel) => ollamaModel.name == visionModel)) {
@@ -71,9 +76,9 @@ void main() {
 
       test('Test streaming with thinking on a non-thinking model throws exception', () async {
         // Using a smaller model that definitely doesn't support thinking
-        expect(() async {
+        try {
           final stream = repository.streamChat(
-            'gemma3:4b', // Use the gemma text-only model for this test
+            nonThinkingModel, // Using a non-thinking model
             messages: [
               LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
               LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
@@ -84,7 +89,9 @@ void main() {
             // This should not be reached
           }
           fail('Should not reach here as model does not support thinking');
-        }, throwsA(isA<ThinkingNotAllowed>()));
+        } catch (e) {
+          expect(e, isA<ThinkingNotAllowed>(), reason: 'ThinkingNotAllowed exception should have been thrown');
+        }
       });
 
       test('Test streaming with image on a model supporting images works', () async {

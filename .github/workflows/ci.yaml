@@ -11,7 +11,7 @@ on:
       models:
         description: "Ollama tags to pull (comma-separated)"
         required: false
-        default: "qwen3:0.6b,nomic-embed-text"
+        default: "qwen3:0.6b,qwen2.5:0.5b,nomic-embed-text"
 
 jobs:
   tests:
@@ -48,7 +48,7 @@ jobs:
       # -------- Pull every requested model ----------
       - name: Pull Ollama models
         run: |
-          IFS=',' read -ra TAGS <<< "${{ github.event.inputs.models || 'qwen3:0.6b,nomic-embed-text' }}"
+          IFS=',' read -ra TAGS <<< "${{ github.event.inputs.models || 'qwen3:0.6b,qwen2.5:0.5b,nomic-embed-text' }}"
           for tag in "${TAGS[@]}"; do
             echo "Pulling $tag …"
             # POST /api/pull {"name":"model:tag"}
