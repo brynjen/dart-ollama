@@ -20,7 +20,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  dart_ollama: ^0.1.3
+  dart_ollama: ^0.1.4
 ```
 
 Then run:
