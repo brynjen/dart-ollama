@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../../domain/model/llm_chunk.dart';
 import '../../domain/model/llm_message.dart';
 import '../../domain/model/llm_response.dart';
@@ -162,10 +160,7 @@ class GPTToolFunctionCall {
       arguments: json['arguments'] ?? '',
     );
   }
-  Map<String, dynamic> toJson() => {
-    'name': name,
-    'arguments': json.encode(arguments),
-  };
+  Map<String, dynamic> toJson() => {'name': name, 'arguments': arguments};
   GPTToolFunctionCall copyWith({required String newArguments, String? name}) {
     return GPTToolFunctionCall(
       name: name ?? this.name,

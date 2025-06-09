@@ -41,7 +41,9 @@ class LLMMessage {
         break;
     }
     if (toolCallId != null) json['tool_call_id'] = toolCallId;
-    if (toolCalls != null) json['tool_calls'] = toolCalls;
+    if (toolCalls != null && toolCalls!.isNotEmpty) {
+      json['tool_calls'] = toolCalls;
+    }
     return json;
   }
 }

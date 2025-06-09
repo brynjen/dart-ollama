@@ -141,12 +141,15 @@ class ChatGPTChatRepository extends LLMChatRepository {
               in chunk.choices[0].delta.toolCalls ?? <GPTToolCall>[]) {
             if (toolCall.id != null) {
               toolsToCall[toolCall.id!] = toolCall;
-            } else {
+            } else if (toolsToCall.isNotEmpty) {
+              // Only access .last if there are keys
               final lastId = toolsToCall.keys.last;
               final updatedTool = toolsToCall[lastId]?.copyWith(
                 newFunction: toolCall.function,
               );
-              toolsToCall[lastId] = updatedTool!;
+              if (updatedTool != null) {
+                toolsToCall[lastId] = updatedTool;
+              }
             }
           }
           final finishReason = chunk.choices[0].finishReason;
@@ -156,8 +159,8 @@ class ChatGPTChatRepository extends LLMChatRepository {
             yield chunk;
           }
           if (finishReason != null) {
-            if (finishReason == 'tool_calls') {
-              // First add the assistant's message with tool calls
+            if (finishReason == 'tool_calls' && toolsToCall.isNotEmpty) {
+              // Only proceed if we have actual tool calls
               final toolCallsList = toolsToCall.values
                   .map(
                     (toolCall) => {
@@ -171,47 +174,54 @@ class ChatGPTChatRepository extends LLMChatRepository {
                   )
                   .toList();
 
-              messages.add(
-                LLMMessage(
-                  content: null,
-                  role: LLMRole.assistant,
-                  toolCalls: toolCallsList,
-                ),
-              );
-
-              // Then add tool response messages
-              for (final toolCall in toolsToCall.values) {
-                final function = toolCall.function;
-                final tool = tools.firstWhere(
-                  (t) => t.name == toolCall.function.name,
-                );
-                final toolResponse =
-                    await tool.execute(
-                      json.decode(function.arguments),
-                      extra: extra,
-                    ) ??
-                    'Unable to use not-existing tool ${function.name}';
+              // Only add the assistant message if we have valid tool calls
+              if (toolCallsList.isNotEmpty) {
                 messages.add(
                   LLMMessage(
-                    content: toolResponse,
-                    role: LLMRole.tool,
-                    toolCallId: toolCall.id,
+                    content: null,
+                    role: LLMRole.assistant,
+                    toolCalls: toolCallsList,
                   ),
                 );
-                toolAttempts--;
+
+                // Then add tool response messages
+                for (final toolCall in toolsToCall.values) {
+                  final function = toolCall.function;
+                  final tool = tools.firstWhere(
+                    (t) => t.name == toolCall.function.name,
+                    orElse: () => throw Exception(
+                      'Tool ${toolCall.function.name} not found',
+                    ),
+                  );
+                  final toolResponse =
+                      await tool.execute(
+                        json.decode(function.arguments),
+                        extra: extra,
+                      ) ??
+                      'Unable to use not-existing tool ${function.name}';
+                  messages.add(
+                    LLMMessage(
+                      content: toolResponse,
+                      role: LLMRole.tool,
+                      toolCallId: toolCall.id,
+                    ),
+                  );
+                  toolAttempts--;
+                }
+                yield* streamChat(
+                  model,
+                  messages: messages,
+                  toolAttempts: toolAttempts,
+                  extra: extra,
+                );
               }
-              yield* streamChat(
-                model,
-                messages: messages,
-                toolAttempts: toolAttempts,
-                extra: extra,
-              );
             } else {
               print('finishReason: $finishReason');
             }
           }
         } catch (e) {
           print('Failed: $e');
+          // Don't rethrow here to allow stream to continue
         }
       }
     }
