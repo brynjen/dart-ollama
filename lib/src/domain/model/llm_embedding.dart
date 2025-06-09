@@ -9,8 +9,8 @@ class LLMEmbedding {
   final int promptEvalCount;
 
   factory LLMEmbedding.fromJson(Map<String, dynamic> json) => LLMEmbedding(
-        model: json['model'],
-        embedding: json['embeddings'] as List<double>,
-        promptEvalCount: json['prompt_eval_count'],
-      );
+    model: json['model'],
+    embedding: json['embeddings'] as List<double>,
+    promptEvalCount: json['prompt_eval_count'],
+  );
 }

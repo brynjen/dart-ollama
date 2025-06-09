@@ -13,7 +13,8 @@ class OllamaEmbeddingResponse {
   final int loadDuration;
   final int promptEvalCount;
   final List<List<double>> embeddings;
-  factory OllamaEmbeddingResponse.fromJson(Map<String, dynamic> json) => OllamaEmbeddingResponse(
+  factory OllamaEmbeddingResponse.fromJson(Map<String, dynamic> json) =>
+      OllamaEmbeddingResponse(
         model: json['model'],
         totalDuration: json['total_duration'],
         loadDuration: json['load_duration'],
@@ -23,16 +24,22 @@ class OllamaEmbeddingResponse {
         promptEvalCount: json['prompt_eval_count'],
       );
   Map<String, dynamic> toJson() => {
-        'model': model,
-        'total_duration': totalDuration,
-        'load_duration': loadDuration,
-        'prompt_eval_count': promptEvalCount,
-        'embeddings': embeddings,
-      };
+    'model': model,
+    'total_duration': totalDuration,
+    'load_duration': loadDuration,
+    'prompt_eval_count': promptEvalCount,
+    'embeddings': embeddings,
+  };
 }
 
 extension OllamaEmbeddingExt on OllamaEmbeddingResponse {
   List<LLMEmbedding> get toLLMEmbedding => embeddings
-      .map((embedding) => LLMEmbedding(model: model, embedding: embedding, promptEvalCount: promptEvalCount))
+      .map(
+        (embedding) => LLMEmbedding(
+          model: model,
+          embedding: embedding,
+          promptEvalCount: promptEvalCount,
+        ),
+      )
       .toList(growable: false);
 }

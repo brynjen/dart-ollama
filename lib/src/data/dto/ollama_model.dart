@@ -98,9 +98,7 @@ class OllamaVersion {
   OllamaVersion({required this.version});
 
   factory OllamaVersion.fromJson(Map<String, dynamic> json) {
-    return OllamaVersion(
-      version: json['version'],
-    );
+    return OllamaVersion(version: json['version']);
   }
 
   @override

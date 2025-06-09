@@ -15,8 +15,8 @@ abstract class LLMChatRepository {
     dynamic extra,
   });
 
-   /// Generates embeddings for all [messages] using the [model]. Ensure model supports embeddings.
-   Future<List<LLMEmbedding>> embed({
+  /// Generates embeddings for all [messages] using the [model]. Ensure model supports embeddings.
+  Future<List<LLMEmbedding>> embed({
     required String model,
     required List<String> messages,
     Map<String, dynamic> options = const {},

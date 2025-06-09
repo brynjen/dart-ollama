@@ -205,10 +205,9 @@ class GPTUsage {
     promptTokens: json['prompt_tokens'],
     completionTokens: json['completion_tokens'],
     totalTokens: json['total_tokens'],
-    usageTokenDetails:
-        json['prompt_tokens_details'] != null
-            ? GPTUsageTokenDetails.fromJson(json['prompt_tokens_details'])
-            : null,
+    usageTokenDetails: json['prompt_tokens_details'] != null
+        ? GPTUsageTokenDetails.fromJson(json['prompt_tokens_details'])
+        : null,
   );
   Map<String, dynamic> toJson() => {
     'prompt_tokens': promptTokens,
@@ -230,12 +229,11 @@ class GPTChunk extends LLMChunk {
          done: choices[0].finishReason != null,
          message: LLMChunkMessage(
            content: choices[0].delta.content,
-           role:
-               choices[0].delta.role != null
-                   ? LLMRole.values.firstWhere(
-                     (e) => e.name == choices[0].delta.role,
-                   )
-                   : null,
+           role: choices[0].delta.role != null
+               ? LLMRole.values.firstWhere(
+                   (e) => e.name == choices[0].delta.role,
+                 )
+               : null,
          ),
        );
   final String id;
@@ -268,47 +266,34 @@ class GPTChunk extends LLMChunk {
       created: created,
       model: model,
       systemFingerprint: systemFingerprint,
-      choices:
-          choices.map((choice) {
-            return GPTChunkChoice(
-              index: choice.index,
-              delta: GPTChunkChoiceDelta(
-                role: choice.delta.role,
-                content: choice.delta.content,
-                toolCalls:
-                    choice.delta.toolCalls?.map((toolCall) {
-                      final newArguments =
-                          newChunk
-                              .choices[0]
-                              .delta
-                              .toolCalls?[0]
-                              .function
-                              .arguments ??
-                          '';
-                      String arguments =
-                          toolCall.function.arguments + newArguments;
-                      return GPTToolCall(
-                        id: toolCall.id,
-                        index: toolCall.index,
-                        type: 'function',
-                        function: GPTToolFunctionCall(
-                          name:
-                              toolCall.function.name ??
-                              newChunk
-                                  .choices[0]
-                                  .delta
-                                  .toolCalls?[0]
-                                  .function
-                                  .name,
-                          arguments: arguments,
-                        ),
-                      );
-                    }).toList(),
-              ),
-              logProbs: choice.logProbs,
-              finishReason: choice.finishReason,
-            );
-          }).toList(),
+      choices: choices.map((choice) {
+        return GPTChunkChoice(
+          index: choice.index,
+          delta: GPTChunkChoiceDelta(
+            role: choice.delta.role,
+            content: choice.delta.content,
+            toolCalls: choice.delta.toolCalls?.map((toolCall) {
+              final newArguments =
+                  newChunk.choices[0].delta.toolCalls?[0].function.arguments ??
+                  '';
+              String arguments = toolCall.function.arguments + newArguments;
+              return GPTToolCall(
+                id: toolCall.id,
+                index: toolCall.index,
+                type: 'function',
+                function: GPTToolFunctionCall(
+                  name:
+                      toolCall.function.name ??
+                      newChunk.choices[0].delta.toolCalls?[0].function.name,
+                  arguments: arguments,
+                ),
+              );
+            }).toList(),
+          ),
+          logProbs: choice.logProbs,
+          finishReason: choice.finishReason,
+        );
+      }).toList(),
     );
   }
 }

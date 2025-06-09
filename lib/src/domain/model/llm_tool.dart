@@ -18,27 +18,24 @@ abstract class LLMTool {
   Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra});
 
   Map<String, dynamic> get toJson {
-  final props = {
-    for (final p in parameters)
-      p.name: p.toJson(),
-  };
-  final reqs = [
-    for (final p in parameters)
-      if (p.isRequired) p.name,
-  ];
+    final props = {for (final p in parameters) p.name: p.toJsonSchema()};
+    final reqs = [
+      for (final p in parameters)
+        if (p.isRequired) p.name,
+    ];
 
-  return {
-    "type": "function",
-    "function": {
-      "name": name,
-      "description": description,
-      if (parameters.isNotEmpty)
-        "parameters": {
-          "type": "object",
-          "properties": props,
-          if (reqs.isNotEmpty) "required": reqs,
-        },
-    },
-  };
-}
+    return {
+      "type": "function",
+      "function": {
+        "name": name,
+        "description": description,
+        if (parameters.isNotEmpty)
+          "parameters": {
+            "type": "object",
+            "properties": props,
+            if (reqs.isNotEmpty) "required": reqs,
+          },
+      },
+    };
+  }
 }

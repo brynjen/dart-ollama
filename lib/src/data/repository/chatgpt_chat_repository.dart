@@ -56,11 +56,18 @@ class ChatGPTChatRepository extends LLMChatRepository {
     try {
       switch (response.statusCode) {
         case HttpStatus.ok:
-          yield* toLLMStream(response, model: model, messages: messages, toolAttempts: toolAttempts ?? maxToolAttempts);
+          yield* toLLMStream(
+            response,
+            model: model,
+            messages: messages,
+            toolAttempts: toolAttempts ?? maxToolAttempts,
+          );
         default:
           // Read the error response body
           final errorBody = await response.transform(utf8.decoder).join();
-          throw Exception('OpenAI API error ${response.statusCode}: $errorBody');
+          throw Exception(
+            'OpenAI API error ${response.statusCode}: $errorBody',
+          );
       }
     } on HttpClientResponse catch (_) {
       //final error = await e.transform(utf8.decoder).join();
@@ -68,7 +75,11 @@ class ChatGPTChatRepository extends LLMChatRepository {
     }
   }
 
-  Future<HttpClientResponse> _sendRequest(String method, Uri uri, {Map<String, dynamic>? body}) async {
+  Future<HttpClientResponse> _sendRequest(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? body,
+  }) async {
     final request = await httpClient.openUrl(method, uri);
     request.bufferOutput = false;
     request.headers.add(HttpHeaders.contentTypeHeader, 'application/json');
@@ -89,16 +100,22 @@ class ChatGPTChatRepository extends LLMChatRepository {
     int toolAttempts = 5,
   }) async* {
     Map<String, GPTToolCall> toolsToCall = {};
-    await for (final output in response.transform(utf8.decoder).transform(GPTStreamDecoder.decoder)) {
+    await for (final output
+        in response
+            .transform(utf8.decoder)
+            .transform(GPTStreamDecoder.decoder)) {
       if (output != '[DONE]') {
         try {
           final chunk = GPTChunk.fromJson(json.decode(output));
-          for (final toolCall in chunk.choices[0].delta.toolCalls ?? <GPTToolCall>[]) {
+          for (final toolCall
+              in chunk.choices[0].delta.toolCalls ?? <GPTToolCall>[]) {
             if (toolCall.id != null) {
               toolsToCall[toolCall.id!] = toolCall;
             } else {
               final lastId = toolsToCall.keys.last;
-              final updatedTool = toolsToCall[lastId]?.copyWith(newFunction: toolCall.function);
+              final updatedTool = toolsToCall[lastId]?.copyWith(
+                newFunction: toolCall.function,
+              );
               toolsToCall[lastId] = updatedTool!;
             }
           }
@@ -116,24 +133,49 @@ class ChatGPTChatRepository extends LLMChatRepository {
                     (toolCall) => {
                       'id': toolCall.id,
                       'type': 'function',
-                      'function': {'name': toolCall.function.name, 'arguments': toolCall.function.arguments},
+                      'function': {
+                        'name': toolCall.function.name,
+                        'arguments': toolCall.function.arguments,
+                      },
                     },
                   )
                   .toList();
 
-              messages.add(LLMMessage(content: null, role: LLMRole.assistant, toolCalls: toolCallsList));
+              messages.add(
+                LLMMessage(
+                  content: null,
+                  role: LLMRole.assistant,
+                  toolCalls: toolCallsList,
+                ),
+              );
 
               // Then add tool response messages
               for (final toolCall in toolsToCall.values) {
                 final function = toolCall.function;
-                final tool = tools.firstWhere((t) => t.name == toolCall.function.name);
+                final tool = tools.firstWhere(
+                  (t) => t.name == toolCall.function.name,
+                );
                 final toolResponse =
-                    await tool.execute(json.decode(function.arguments), extra: extra) ??
+                    await tool.execute(
+                      json.decode(function.arguments),
+                      extra: extra,
+                    ) ??
                     'Unable to use not-existing tool ${function.name}';
-                messages.add(LLMMessage(content: toolResponse, role: LLMRole.tool, toolCallId: toolCall.id));
+                messages.add(
+                  LLMMessage(
+                    content: toolResponse,
+                    role: LLMRole.tool,
+                    toolCallId: toolCall.id,
+                  ),
+                );
                 toolAttempts--;
               }
-              yield* streamChat(model, messages: messages, toolAttempts: toolAttempts, extra: extra);
+              yield* streamChat(
+                model,
+                messages: messages,
+                toolAttempts: toolAttempts,
+                extra: extra,
+              );
             } else {
               print('finishReason: $finishReason');
             }
@@ -152,11 +194,17 @@ class ChatGPTChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
   }) async {
     final body = {'model': model, 'input': messages};
-    final response = await _sendRequest('POST', Uri.parse('$baseUrl/v1/embeddings'), body: body);
+    final response = await _sendRequest(
+      'POST',
+      Uri.parse('$baseUrl/v1/embeddings'),
+      body: body,
+    );
     switch (response.statusCode) {
       case HttpStatus.ok:
         final responseBody = await response.transform(utf8.decoder).join();
-        return ChatGPTEmbeddingsResponse.fromJson(json.decode(responseBody)).toLLMEmbedding;
+        return ChatGPTEmbeddingsResponse.fromJson(
+          json.decode(responseBody),
+        ).toLLMEmbedding;
       default:
         stdout.writeln('\nError generating embedding: ${response.statusCode}');
         throw response;

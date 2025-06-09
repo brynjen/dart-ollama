@@ -5,60 +5,76 @@ class LLMToolParam {
     required this.description,
     this.isRequired = false,
     this.enums = const [],
-    this.items,
-    this.minItems,
-    this.maxItems,
-    this.uniqueItems,
+    this.items, // for arrays
+    this.properties, // for objects
+    this.additionalProperties, // for objects
+    this.minItems, // for arrays
+    this.maxItems, // for arrays
+    this.uniqueItems, // for arrays
   });
 
-  /// Name of the parameter
   final String name;
 
   /// must be one of: "string","integer","number","boolean","object","array"
   final String type;
+  final String description;
+  final bool isRequired;
+  final List<String> enums;
 
-  /// if type == "array", this describes each element
+  /// if type=="array", this describes each element
   final LLMToolParam? items;
 
-  /// optional JSON-Schema constraints on the array itself
+  /// if type=="object", these are its child properties
+  final List<LLMToolParam>? properties;
+
+  /// if type=="object", whether to allow extra fields
+  final bool? additionalProperties;
+
+  /// JSON‐Schema keywords on arrays
   final int? minItems;
   final int? maxItems;
   final bool? uniqueItems;
 
-  /// A good description of what this parameter entails for the LLM
-  final String description;
+  Map<String, dynamic> toJsonSchema() {
+    final schema = <String, dynamic>{"description": description};
 
-  /// Whether this parameter is a required input to achieve output
-  final bool isRequired;
+    switch (type) {
+      case "array":
+        schema["type"] = "array";
+        if (items == null) {
+          throw StateError("Array param '$name' needs an `items` schema");
+        }
+        schema["items"] = items!.toJsonSchema();
+        if (minItems != null) schema["minItems"] = minItems;
+        if (maxItems != null) schema["maxItems"] = maxItems;
+        if (uniqueItems == true) schema["uniqueItems"] = true;
+        break;
 
-  /// Possible enum return values (like celsius and fahrenheit)
-  final List<String> enums;
+      case "object":
+        schema["type"] = "object";
+        if (properties != null && properties!.isNotEmpty) {
+          schema["properties"] = {
+            for (var p in properties!) p.name: p.toJsonSchema(),
+          };
+          final req = [
+            for (var p in properties!)
+              if (p.isRequired) p.name,
+          ];
+          if (req.isNotEmpty) schema["required"] = req;
+        }
+        // default in JSON Schema is true; only write if you want to forbid extras
+        if (additionalProperties != null) {
+          schema["additionalProperties"] = additionalProperties;
+        }
+        break;
 
-  Map<String, dynamic> toJson() {
-    // base description
-    final json = <String, dynamic>{
-      "description": description,
-    };
-
-    if (type == "array") {
-      json["type"] = "array";
-      // must have an items‐schema
-      if (items == null) {
-        throw StateError("array param '$name' needs an `items` schema");
-      }
-      // recurse
-      json["items"] = items!.toJson();
-      if (minItems != null) json["minItems"] = minItems;
-      if (maxItems != null) json["maxItems"] = maxItems;
-      if (uniqueItems == true) json["uniqueItems"] = true;
-    } else {
-      // primitive or object
-      json["type"] = type;
-      if (enums.isNotEmpty) json["enum"] = enums;
-      // if you want to support nested objects you could also
-      // add a `properties` map here… but that’s another extension.
+      default:
+        schema["type"] = type;
+        if (enums.isNotEmpty) {
+          schema["enum"] = enums;
+        }
     }
 
-    return json;
+    return schema;
   }
 }
