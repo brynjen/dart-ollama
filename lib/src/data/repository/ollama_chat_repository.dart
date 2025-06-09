@@ -283,8 +283,9 @@ class OllamaChatRepository extends LLMChatRepository {
 
     if (message.toolCallId != null) json['tool_call_id'] = message.toolCallId;
     if (message.toolCalls != null) json['tool_calls'] = message.toolCalls;
-    if (message.images != null && message.images!.isNotEmpty)
+    if (message.images != null && message.images!.isNotEmpty) {
       json['images'] = message.images;
+    }
 
     return json;
   }
