@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:http/http.dart' as http;
 
 import '../../domain/repository/llm_chat_repository.dart';
 import '../../domain/model/llm_chunk.dart';
@@ -10,14 +10,17 @@ import '../dto/gpt_response.dart';
 import '../dto/gpt_stream_decoder.dart';
 import '../../domain/model/llm_embedding.dart';
 
+/// Repository for chatting with ChatGPT. Add api key and it should just work. For a reference of model names,
+/// see https://platform.openai.com/docs/models/overview
 class ChatGPTChatRepository extends LLMChatRepository {
   ChatGPTChatRepository({
     required this.apiKey,
     this.baseUrl = "https://api.openai.com",
     this.tools = const [],
     this.maxToolAttempts = 25,
-    HttpClient? httpClient,
-  }) : httpClient = httpClient ?? HttpClient();
+    http.Client? httpClient,
+  }) : httpClient = httpClient ?? http.Client();
+
   final String baseUrl;
 
   /// The API key to use for openAI
@@ -26,7 +29,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
   /// Available tools the repository can use.
   final List<LLMTool> tools;
 
-  final HttpClient httpClient;
+  final http.Client httpClient;
 
   /// The maximum number of tool attempts to make. for a single request.
   final int maxToolAttempts;
@@ -52,10 +55,10 @@ class ChatGPTChatRepository extends LLMChatRepository {
     if (tools.isNotEmpty) {
       body['tools'] = tools.map((tool) => tool.toJson).toList(growable: false);
     }
-    final response = await _sendRequest('POST', uri, body: body);
+    final response = await _sendStreamingRequest('POST', uri, body: body);
     try {
       switch (response.statusCode) {
-        case HttpStatus.ok:
+        case 200: // HttpStatus.ok
           yield* toLLMStream(
             response,
             model: model,
@@ -64,35 +67,62 @@ class ChatGPTChatRepository extends LLMChatRepository {
           );
         default:
           // Read the error response body
-          final errorBody = await response.transform(utf8.decoder).join();
+          final errorBody = await response.stream
+              .transform(utf8.decoder)
+              .join();
           throw Exception(
             'OpenAI API error ${response.statusCode}: $errorBody',
           );
       }
-    } on HttpClientResponse catch (_) {
-      //final error = await e.transform(utf8.decoder).join();
+    } catch (e) {
       rethrow;
     }
   }
 
-  Future<HttpClientResponse> _sendRequest(
+  Future<http.StreamedResponse> _sendStreamingRequest(
     String method,
     Uri uri, {
     Map<String, dynamic>? body,
   }) async {
-    final request = await httpClient.openUrl(method, uri);
-    request.bufferOutput = false;
-    request.headers.add(HttpHeaders.contentTypeHeader, 'application/json');
-    request.headers.add(HttpHeaders.acceptHeader, 'text/event-stream');
-    request.headers.add(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+    final request = http.StreamedRequest(method, uri);
+    request.headers['content-type'] = 'application/json';
+    request.headers['accept'] = 'text/event-stream';
+    request.headers['authorization'] = 'Bearer $apiKey';
+
     if (body != null) {
-      request.add(utf8.encode(json.encode(body)));
+      final bodyBytes = utf8.encode(json.encode(body));
+      request.headers['content-length'] = bodyBytes.length.toString();
+      request.sink.add(bodyBytes);
     }
-    return request.close();
+    request.sink.close();
+
+    return httpClient.send(request);
+  }
+
+  Future<http.Response> _sendNonStreamingRequest(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? body,
+  }) async {
+    final headers = {
+      'content-type': 'application/json',
+      'accept': 'application/json',
+      'authorization': 'Bearer $apiKey',
+    };
+
+    final response = method.toUpperCase() == 'POST'
+        ? await httpClient.post(
+            uri,
+            headers: headers,
+            body: body != null ? json.encode(body) : null,
+          )
+        : await httpClient.get(uri, headers: headers);
+
+    return response;
   }
 
   Stream<LLMChunk> toLLMStream(
-    HttpClientResponse response, {
+    http.StreamedResponse response, {
     required String model,
     required List<LLMMessage> messages,
     dynamic extra,
@@ -101,7 +131,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
   }) async* {
     Map<String, GPTToolCall> toolsToCall = {};
     await for (final output
-        in response
+        in response.stream
             .transform(utf8.decoder)
             .transform(GPTStreamDecoder.decoder)) {
       if (output != '[DONE]') {
@@ -194,20 +224,19 @@ class ChatGPTChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
   }) async {
     final body = {'model': model, 'input': messages};
-    final response = await _sendRequest(
+    final response = await _sendNonStreamingRequest(
       'POST',
       Uri.parse('$baseUrl/v1/embeddings'),
       body: body,
     );
     switch (response.statusCode) {
-      case HttpStatus.ok:
-        final responseBody = await response.transform(utf8.decoder).join();
+      case 200: // HttpStatus.ok
         return ChatGPTEmbeddingsResponse.fromJson(
-          json.decode(responseBody),
+          json.decode(response.body),
         ).toLLMEmbedding;
       default:
-        stdout.writeln('\nError generating embedding: ${response.statusCode}');
-        throw response;
+        print('\nError generating embedding: ${response.statusCode}');
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
     }
   }
 }

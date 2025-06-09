@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dart_ollama/dart_ollama.dart';
 
 /// Basic Chat Example
@@ -28,13 +26,12 @@ Future<void> main() async {
   // Example conversation with thinking enabled
   await _runBasicChatExample(chatRepository, model);
 
-  print('\n' + '=' * 50 + '\n');
+  print('\n${'=' * 50}\n');
 
   // Example without thinking to show the difference
   await _runChatWithoutThinking(chatRepository, model);
 
   print('\n✅ Examples completed successfully!');
-  exit(0);
 }
 
 /// Demonstrates chat with thinking enabled
@@ -74,8 +71,7 @@ Future<void> _runBasicChatExample(
     if (chunk.message?.content != null) {
       final content = chunk.message!.content!;
       responseContent += content;
-      stdout.write(content); // Show streaming effect
-      stdout.flush();
+      print(content);
     }
   }
 
@@ -119,8 +115,7 @@ Future<void> _runChatWithoutThinking(
     if (chunk.message?.content != null) {
       final content = chunk.message!.content!;
       responseContent += content;
-      stdout.write(content);
-      stdout.flush();
+      print(content);
     }
   }
 
@@ -141,14 +136,14 @@ Future<void> _ensureModelAvailable(
 
       final modelStream = repository.pullModel(modelName);
       await for (final progress in modelStream) {
-        // Clear the line and show progress
-        stdout.write('\r${progress.status}');
+        final statusLine = progress.status;
         if (progress.total != null && progress.completed != null) {
           final percentage = (progress.progress * 100).toStringAsFixed(1);
           final bar = _buildProgressBar(progress.progress, 30);
-          stdout.write(' $bar $percentage%');
+          print('$statusLine $bar $percentage%');
+        } else {
+          print(statusLine);
         }
-        stdout.flush();
       }
       print('\n✅ Model $modelName downloaded successfully!');
     } else {
@@ -159,7 +154,7 @@ Future<void> _ensureModelAvailable(
     print(
       '💡 Make sure Ollama is running and accessible at http://localhost:11434',
     );
-    exit(1);
+    throw Exception('Model setup failed: $e');
   }
 }
 

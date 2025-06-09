@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'package:http/http.dart' as http;
 
 import '../dto/ollama_embedding_response.dart';
 import '../dto/ollama_response.dart';
@@ -11,23 +11,21 @@ import '../../domain/model/llm_message.dart';
 import '../../domain/model/llm_tool.dart';
 import '../../domain/repository/llm_chat_repository.dart';
 
+/// Repository for chatting with Ollama. It defaults to the standard Ollama base url of http://localhost:11434.
 class OllamaChatRepository extends LLMChatRepository {
   OllamaChatRepository({
     this.baseUrl = "http://localhost:11434",
     this.tools = const [],
     this.maxToolAttempts = 25,
-    HttpClient? httpClient,
-  }) : httpClient = httpClient ?? HttpClient() {
-    // Set reasonable timeouts for large image payloads
-    this.httpClient.connectionTimeout = const Duration(seconds: 120);
-    this.httpClient.idleTimeout = const Duration(seconds: 120);
-  }
+    http.Client? httpClient,
+  }) : httpClient = httpClient ?? http.Client();
+
   final String baseUrl;
 
   /// Available tools the repository can use.
   final List<LLMTool> tools;
 
-  final HttpClient httpClient;
+  final http.Client httpClient;
 
   /// The maximum number of tool attempts to make. for a single request.
   final int maxToolAttempts;
@@ -38,15 +36,14 @@ class OllamaChatRepository extends LLMChatRepository {
   /// Vision models have "vision" in their capabilities array
   Future<bool> _supportsVision(String model) async {
     try {
-      final response = await _sendRequest(
+      final response = await _sendNonStreamingRequest(
         'POST',
         Uri.parse('$baseUrl/api/show'),
         body: {'model': model},
       );
 
       if (response.statusCode == 200) {
-        final body = await response.transform(utf8.decoder).join();
-        final json = jsonDecode(body);
+        final json = jsonDecode(response.body);
 
         // Check if model has vision capability
         final capabilities = json['capabilities'] as List<dynamic>?;
@@ -96,16 +93,18 @@ class OllamaChatRepository extends LLMChatRepository {
 
     try {
       switch (response.statusCode) {
-        case HttpStatus.ok:
+        case 200: // HttpStatus.ok
           yield* toLLMStream(
             response,
             model: model,
             messages: messages,
             toolAttempts: toolAttempts ?? maxToolAttempts,
           );
-        case HttpStatus.badRequest:
+        case 400: // HttpStatus.badRequest
           // Handle 400 errors which might be feature not supported
-          final errorBody = await response.transform(utf8.decoder).join();
+          final errorBody = await response.stream
+              .transform(utf8.decoder)
+              .join();
           await _handleBadRequestError(
             errorBody,
             model,
@@ -114,9 +113,12 @@ class OllamaChatRepository extends LLMChatRepository {
           );
           break;
         default:
-          throw response;
+          final errorBody = await response.stream
+              .transform(utf8.decoder)
+              .join();
+          throw Exception('HTTP ${response.statusCode}: $errorBody');
       }
-    } on HttpClientResponse catch (_) {
+    } catch (e) {
       rethrow;
     }
   }
@@ -163,40 +165,22 @@ class OllamaChatRepository extends LLMChatRepository {
     }
   }
 
-  Future<HttpClientResponse> _sendRequest(
+  Future<http.StreamedResponse> _sendRequest(
     String method,
     Uri uri, {
     Map<String, dynamic>? body,
   }) async {
-    final request = await httpClient.openUrl(method, uri);
-    request.bufferOutput = false;
-    request.headers.add(HttpHeaders.contentTypeHeader, 'application/json');
-    request.headers.add(HttpHeaders.acceptHeader, 'text/event-stream');
+    final request = http.StreamedRequest(method, uri);
+    request.headers['content-type'] = 'application/json';
+    request.headers['accept'] = 'text/event-stream';
 
     if (body != null) {
       final bodyJson = json.encode(body);
       final bodyBytes = utf8.encode(bodyJson);
-
-      // Set content length for large payloads
-      request.headers.add(
-        HttpHeaders.contentLengthHeader,
-        bodyBytes.length.toString(),
-      );
-
-      // For large payloads, write in chunks to avoid buffer issues
-      if (bodyBytes.length > 1024 * 1024) {
-        // 1MB threshold
-        const chunkSize = 64 * 1024; // 64KB chunks
-        for (int i = 0; i < bodyBytes.length; i += chunkSize) {
-          final end = (i + chunkSize < bodyBytes.length)
-              ? i + chunkSize
-              : bodyBytes.length;
-          request.add(bodyBytes.sublist(i, end));
-        }
-      } else {
-        request.add(bodyBytes);
-      }
+      request.headers['content-length'] = bodyBytes.length.toString();
+      request.sink.add(bodyBytes);
     }
+    request.sink.close();
 
     // Add timeout for large requests - adjust based on payload size
     final timeoutDuration =
@@ -204,17 +188,39 @@ class OllamaChatRepository extends LLMChatRepository {
         ? const Duration(seconds: 300) // 5 minutes for large images
         : const Duration(minutes: 2);
 
-    return request.close().timeout(
-      timeoutDuration,
-      onTimeout: () {
-        request.abort();
-        throw TimeoutException('Request timed out', timeoutDuration);
-      },
-    );
+    return httpClient
+        .send(request)
+        .timeout(
+          timeoutDuration,
+          onTimeout: () {
+            throw TimeoutException('Request timed out', timeoutDuration);
+          },
+        );
+  }
+
+  Future<http.Response> _sendNonStreamingRequest(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? body,
+  }) async {
+    final headers = {
+      'content-type': 'application/json',
+      'accept': 'application/json',
+    };
+
+    final response = method.toUpperCase() == 'POST'
+        ? await httpClient.post(
+            uri,
+            headers: headers,
+            body: body != null ? json.encode(body) : null,
+          )
+        : await httpClient.get(uri, headers: headers);
+
+    return response;
   }
 
   Stream<LLMChunk> toLLMStream(
-    HttpClientResponse response, {
+    http.StreamedResponse response, {
     required String model,
     required List<LLMMessage> messages,
     dynamic extra,
@@ -225,7 +231,9 @@ class OllamaChatRepository extends LLMChatRepository {
     List<dynamic> collectedToolCalls = [];
 
     await for (final line
-        in response.transform(utf8.decoder).transform(const LineSplitter())) {
+        in response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
       if (line.isNotEmpty) {
         try {
           final chunk = OllamaChunk.fromJson(json.decode(line));
@@ -297,20 +305,19 @@ class OllamaChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
   }) async {
     final body = {'model': model, 'input': messages, 'options': options};
-    final response = await _sendRequest(
+    final response = await _sendNonStreamingRequest(
       'POST',
       Uri.parse('$baseUrl/api/embed'),
       body: body,
     );
     switch (response.statusCode) {
-      case HttpStatus.ok:
-        final responseBody = await response.transform(utf8.decoder).join();
+      case 200: // HttpStatus.ok
         return OllamaEmbeddingResponse.fromJson(
-          json.decode(responseBody),
+          json.decode(response.body),
         ).toLLMEmbedding;
       default:
-        stdout.writeln('\nError generating embedding: ${response.statusCode}');
-        throw response;
+        print('\nError generating embedding: ${response.statusCode}');
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
     }
   }
 }

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dart_ollama/dart_ollama.dart';
 
 Future<void> main() async {
@@ -28,8 +26,6 @@ Future<void> main() async {
 
   // Example 2: Complex calculation with formatting
   await _runComplexCalculationExample(chatRepository);
-
-  exit(0);
 }
 
 Future<void> _runCalculationExample(OllamaChatRepository chatRepository) async {
@@ -109,13 +105,14 @@ Future<void> _ensureModelAvailable(
     print('📥 Model $modelName not found. Pulling...');
     final modelStream = repository.pullModel(modelName);
     await for (final progress in modelStream) {
-      stdout.write('\r${progress.status}');
+      final statusLine = progress.status;
       if (progress.total != null && progress.completed != null) {
         final percentage = (progress.progress * 100).toStringAsFixed(1);
         final bar = _buildProgressBar(progress.progress, 30);
-        stdout.write(' $bar $percentage%');
+        print('$statusLine $bar $percentage%');
+      } else {
+        print(statusLine);
       }
-      stdout.flush();
     }
     print('\n✅ Model $modelName pulled successfully.');
   } else {
@@ -199,21 +196,21 @@ class ResultFormatterTool extends LLMTool {
 
   @override
   String get description =>
-      'Format mathematical results in a nice, readable way';
+      'Format mathematical results in a nice, readable way with decorations';
 
   @override
   List<LLMToolParam> get parameters => [
     LLMToolParam(
       name: 'result',
       type: 'string',
-      description: 'The calculation result to format',
+      description: 'The mathematical result to format',
       isRequired: true,
     ),
     LLMToolParam(
       name: 'style',
       type: 'string',
-      description: 'Formatting style to use',
-      enums: ['standard', 'fancy', 'scientific'],
+      description: 'The formatting style to use',
+      enums: ['simple', 'decorated', 'boxed'],
       isRequired: false,
     ),
   ];
@@ -221,16 +218,17 @@ class ResultFormatterTool extends LLMTool {
   @override
   Future<String> execute(Map<String, dynamic> args, {dynamic extra}) async {
     final result = args['result'] as String;
-    final style = args['style'] as String? ?? 'standard';
+    final style = args['style'] as String? ?? 'decorated';
 
     switch (style) {
-      case 'fancy':
-        return '✨ 📊 RESULT: $result 📊 ✨';
-      case 'scientific':
-        return '🔬 Scientific Result: [$result]';
-      case 'standard':
+      case 'simple':
+        return '✅ Result: $result';
+      case 'boxed':
+        final line = '═' * (result.length + 10);
+        return '╔$line╗\n║    $result    ║\n╚$line╝';
+      case 'decorated':
       default:
-        return '📋 Formatted Result: $result';
+        return '🎯 **RESULT**: $result 🎯';
     }
   }
 }

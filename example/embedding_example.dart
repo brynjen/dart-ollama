@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:dart_ollama/dart_ollama.dart';
@@ -98,8 +97,6 @@ Future<void> main() async {
     print('${i + 1}. "${texts[entry.key]}"');
     print('   Score: ${entry.value.toStringAsFixed(4)}');
   }
-
-  exit(0);
 }
 
 /// Calculate cosine similarity between two embedding vectors
@@ -137,13 +134,14 @@ Future<void> _ensureModelAvailable(
     print('📥 Model $modelName not found. Pulling...');
     final modelStream = repository.pullModel(modelName);
     await for (final progress in modelStream) {
-      stdout.write('\r${progress.status}');
+      final statusLine = progress.status;
       if (progress.total != null && progress.completed != null) {
         final percentage = (progress.progress * 100).toStringAsFixed(1);
         final bar = _buildProgressBar(progress.progress, 30);
-        stdout.write(' $bar $percentage%');
+        print('$statusLine $bar $percentage%');
+      } else {
+        print(statusLine);
       }
-      stdout.flush();
     }
     print('\n✅ Model $modelName pulled successfully.');
   } else {

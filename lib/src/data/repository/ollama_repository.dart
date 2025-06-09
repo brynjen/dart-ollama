@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:http/http.dart' as http;
 
 import '../dto/ollama_model.dart';
 
@@ -7,17 +7,16 @@ import '../dto/ollama_model.dart';
 class OllamaRepository {
   OllamaRepository({
     this.baseUrl = "http://localhost:11434",
-    HttpClient? httpClient,
-  }) : httpClient = httpClient ?? HttpClient();
+    http.Client? httpClient,
+  }) : httpClient = httpClient ?? http.Client();
   final String baseUrl;
-  final HttpClient httpClient;
+  final http.Client httpClient;
 
   /// List all locally available models
   /// GET /api/tags
   Future<List<OllamaModel>> models() async {
     final response = await _sendRequest('GET', Uri.parse('$baseUrl/api/tags'));
-    final body = await response.transform(utf8.decoder).join();
-    final json = jsonDecode(body);
+    final json = jsonDecode(response.body);
 
     // The response has a "models" key that contains the array of models
     final List<dynamic> modelsJson = json['models'] ?? [];
@@ -32,8 +31,7 @@ class OllamaRepository {
       Uri.parse('$baseUrl/api/show'),
       body: {'model': modelName},
     );
-    final body = await response.transform(utf8.decoder).join();
-    final json = jsonDecode(body);
+    final json = jsonDecode(response.body);
     return OllamaModelInfo.fromJson(json);
   }
 
@@ -41,20 +39,23 @@ class OllamaRepository {
   /// POST /api/pull
   /// Returns a stream of progress updates
   Stream<OllamaPullProgress> pullModel(String modelName) async* {
-    final request = await httpClient.openUrl(
+    final request = http.StreamedRequest(
       'POST',
       Uri.parse('$baseUrl/api/pull'),
     );
-    request.headers.add(HttpHeaders.contentTypeHeader, 'application/json');
-    request.add(utf8.encode(json.encode({'model': modelName})));
+    request.headers['content-type'] = 'application/json';
+    final bodyBytes = utf8.encode(json.encode({'model': modelName}));
+    request.headers['content-length'] = bodyBytes.length.toString();
+    request.sink.add(bodyBytes);
+    request.sink.close();
 
-    final response = await request.close();
+    final response = await httpClient.send(request);
 
     if (response.statusCode != 200) {
       throw Exception('Failed to pull model: ${response.statusCode}');
     }
 
-    await for (final chunk in response.transform(utf8.decoder)) {
+    await for (final chunk in response.stream.transform(utf8.decoder)) {
       // Split by newlines to handle multiple JSON objects in one chunk
       final lines = chunk.split('\n').where((line) => line.trim().isNotEmpty);
       for (final line in lines) {
@@ -76,22 +77,24 @@ class OllamaRepository {
       'GET',
       Uri.parse('$baseUrl/api/version'),
     );
-    final body = await response.transform(utf8.decoder).join();
-    final json = jsonDecode(body);
+    final json = jsonDecode(response.body);
     return OllamaVersion.fromJson(json);
   }
 
-  Future<HttpClientResponse> _sendRequest(
+  Future<http.Response> _sendRequest(
     String method,
     Uri uri, {
     Map<String, dynamic>? body,
   }) async {
-    final request = await httpClient.openUrl(method, uri);
-    request.headers.add(HttpHeaders.contentTypeHeader, 'application/json');
-    if (body != null) {
-      request.add(utf8.encode(json.encode(body)));
-    }
-    final response = await request.close();
+    final headers = {'content-type': 'application/json'};
+
+    final response = method.toUpperCase() == 'POST'
+        ? await httpClient.post(
+            uri,
+            headers: headers,
+            body: body != null ? json.encode(body) : null,
+          )
+        : await httpClient.get(uri, headers: headers);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Request failed with status ${response.statusCode}');

@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:http/http.dart' as http;
 
 import 'package:dart_ollama/dart_ollama.dart';
 
@@ -34,8 +34,6 @@ Future<void> main() async {
 
   // Example 2: Image analysis with specific questions
   await _runImageAnalysisExample(chatRepository, visionModel, testImageBase64);
-
-  exit(0);
 }
 
 Future<void> _runImageDescriptionExample(
@@ -68,9 +66,8 @@ Future<void> _runImageDescriptionExample(
     await for (final chunk in stream) {
       final content = chunk.message?.content ?? '';
       response += content;
-      // Print response as it streams (like a typewriter effect)
-      stdout.write(content);
-      stdout.flush();
+      // Print response as it streams
+      print(content);
     }
 
     print('\n\n📝 Complete response: $response');
@@ -113,8 +110,7 @@ Future<void> _runImageAnalysisExample(
 
     await for (final chunk in stream) {
       final content = chunk.message?.content ?? '';
-      stdout.write(content);
-      stdout.flush();
+      print(content);
     }
 
     print('\n\n📋 Analysis complete!');
@@ -132,31 +128,20 @@ Future<String> _downloadAndEncodeImage(String imageUrl) async {
   try {
     print('📥 Downloading image from: $imageUrl');
 
-    final httpClient = HttpClient();
-
-    // Set timeouts for the download
-    httpClient.connectionTimeout = const Duration(seconds: 30);
-    httpClient.idleTimeout = const Duration(seconds: 30);
-
-    final request = await httpClient.getUrl(Uri.parse(imageUrl));
-    final response = await request.close();
+    final response = await http
+        .get(Uri.parse(imageUrl))
+        .timeout(const Duration(seconds: 30));
 
     if (response.statusCode != 200) {
       throw Exception('Failed to download image: HTTP ${response.statusCode}');
     }
 
-    // Read image bytes
-    final imageBytes = <int>[];
-    await for (final chunk in response) {
-      imageBytes.addAll(chunk);
-    }
-
-    httpClient.close();
-
     // Convert to base64
-    final base64Image = base64Encode(imageBytes);
+    final base64Image = base64Encode(response.bodyBytes);
 
-    print('✅ Image downloaded and encoded (${imageBytes.length} bytes)');
+    print(
+      '✅ Image downloaded and encoded (${response.bodyBytes.length} bytes)',
+    );
     print('🎨 Base64 length: ${base64Image.length} characters');
 
     return base64Image;
@@ -198,19 +183,21 @@ Future<void> _ensureModelAvailable(
 
     // For demo purposes, we'll show how to pull but suggest manual installation
     print('\n🚀 Starting model pull...');
+
     final modelStream = repository.pullModel(modelName);
     await for (final progress in modelStream) {
-      stdout.write('\r${progress.status}');
+      final statusLine = progress.status;
       if (progress.total != null && progress.completed != null) {
         final percentage = (progress.progress * 100).toStringAsFixed(1);
         final bar = _buildProgressBar(progress.progress, 30);
-        stdout.write(' $bar $percentage%');
+        print('$statusLine $bar $percentage%');
+      } else {
+        print(statusLine);
       }
-      stdout.flush();
     }
-    print('\n✅ Model $modelName pulled successfully.');
+    print('\n✅ Model $modelName downloaded successfully!');
   } else {
-    print('✅ Vision model $modelName is available.');
+    print('✅ Model $modelName is already available.');
   }
 }
 

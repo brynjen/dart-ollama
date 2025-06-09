@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dart_ollama/dart_ollama.dart';
 import 'package:test/test.dart';
 import 'package:dotenv/dotenv.dart';
@@ -15,20 +13,12 @@ void main() {
 
       setUpAll(() async {
         final env = DotEnv(includePlatformEnvironment: true);
-        if (File('.env').existsSync()) {
-          env.load();
-          final storedApiKey = env['OPENAI_API_KEY'];
-          if (storedApiKey == null) {
-            throw 'OPENAI_API_KEY is not set in environment';
-          }
-          apiKey = storedApiKey;
-        } else {
-          final storedApiKey = Platform.environment['OPENAI_API_KEY'];
-          if (storedApiKey == null) {
-            throw 'OPENAI_API_KEY is not set in environment';
-          }
-          apiKey = storedApiKey;
+        env.load();
+        final storedApiKey = env['OPENAI_API_KEY'];
+        if (storedApiKey == null) {
+          throw 'OPENAI_API_KEY is not set in environment';
         }
+        apiKey = storedApiKey;
       });
 
       setUp(() {
