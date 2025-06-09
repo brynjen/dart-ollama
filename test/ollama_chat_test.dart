@@ -242,6 +242,31 @@ void main() {
         print('Thinking: $thinking');
         print('Content: $content');
       });
+
+      test('Test tool with array parameter', () async {
+        final tool = TagListTool();
+        expect(tool.counterUsed, 0);
+        repository = OllamaChatRepository(baseUrl: baseUrl, tools: [tool]);
+        final stream = repository.streamChat(
+          thinkingModel,
+          messages: [
+            LLMMessage(role: LLMRole.system, content: 'Answer short and consise. Use tools.'),
+            LLMMessage(role: LLMRole.user, content: 'Use the tag tool to add the tags "LLM", "is" and "cool". Give me the output of the tool.'),
+          ],
+          think: true,
+        );
+        String content = '';
+        String thinking = '';
+        await for (final chunk in stream) {
+          thinking += chunk.message?.thinking ?? '';
+          content += chunk.message?.content ?? '';
+        }
+        expect(tool.counterUsed, 1);
+        expect(content, isNotEmpty);
+        expect(thinking, isNotEmpty);
+        print('Thinking: $thinking');
+        print('Content: $content');
+      });
     });
 
     group('Embedding tests', () {
@@ -335,4 +360,31 @@ class TestResultFormatterTool extends LLMTool {
   List<LLMToolParam> get parameters => [
     LLMToolParam(name: 'result', type: 'string', description: 'The calculator tool result to format', isRequired: true),
   ];
+}
+
+class TagListTool extends LLMTool {
+  int counterUsed = 0;
+  @override String get name => "make_tag_list";
+  @override String get description => "Build a joined tag list";
+  @override List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: "tags",
+      type: "array",
+      description: "A list of tags to join",
+      isRequired: true,
+      items: LLMToolParam(
+        name: "tag",
+        type: "string",
+        description: "A single tag",
+      ),
+      minItems: 1,
+      uniqueItems: true,
+    ),
+  ];
+
+  @override Future<String> execute(Map<String, dynamic> args, {extra}) async {
+    counterUsed++;
+    final list = (args["tags"] as List).cast<String>();
+    return 'Result is: ${list.join("<!--!>")}';
+  }
 }
