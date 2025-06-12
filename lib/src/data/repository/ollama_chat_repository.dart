@@ -15,15 +15,11 @@ import '../../domain/repository/llm_chat_repository.dart';
 class OllamaChatRepository extends LLMChatRepository {
   OllamaChatRepository({
     this.baseUrl = "http://localhost:11434",
-    this.tools = const [],
     this.maxToolAttempts = 25,
     http.Client? httpClient,
   }) : httpClient = httpClient ?? http.Client();
 
   final String baseUrl;
-
-  /// Available tools the repository can use.
-  final List<LLMTool> tools;
 
   final http.Client httpClient;
 
@@ -64,6 +60,7 @@ class OllamaChatRepository extends LLMChatRepository {
   Stream<LLMChunk> streamChat(
     String model, {
     required List<LLMMessage> messages,
+    List<LLMTool> tools = const [],
     dynamic extra,
     int? toolAttempts,
     bool think = false,
@@ -97,6 +94,7 @@ class OllamaChatRepository extends LLMChatRepository {
           yield* toLLMStream(
             response,
             model: model,
+            tools: tools,
             messages: messages,
             toolAttempts: toolAttempts ?? maxToolAttempts,
           );
@@ -222,6 +220,7 @@ class OllamaChatRepository extends LLMChatRepository {
   Stream<LLMChunk> toLLMStream(
     http.StreamedResponse response, {
     required String model,
+    required List<LLMTool> tools,
     required List<LLMMessage> messages,
     dynamic extra,
     Map<String, dynamic> options = const {},
@@ -279,9 +278,6 @@ class OllamaChatRepository extends LLMChatRepository {
       }
     }
   }
-
-  @override
-  List<LLMTool> availableTools() => tools;
 
   Map<String, dynamic> _ollamaMessageToJson(LLMMessage message) {
     final json = <String, dynamic>{

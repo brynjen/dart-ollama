@@ -4,14 +4,13 @@ import '../model/llm_message.dart';
 import '../model/llm_tool.dart';
 
 abstract class LLMChatRepository {
-  /// The tools available to the repository
-  List<LLMTool> availableTools();
-
   /// Streams a chat from the LLM, returning a stream of [LLMChunk]s. [think] will not yield thinking unless model supports it.
   Stream<LLMChunk> streamChat(
     String model, {
     required List<LLMMessage> messages,
     bool think = false,
+    /// The tools this message should use.
+    List<LLMTool> tools = const [],
     dynamic extra,
   });
 

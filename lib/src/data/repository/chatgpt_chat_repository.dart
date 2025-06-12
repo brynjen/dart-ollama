@@ -16,7 +16,6 @@ class ChatGPTChatRepository extends LLMChatRepository {
   ChatGPTChatRepository({
     required this.apiKey,
     this.baseUrl = "https://api.openai.com",
-    this.tools = const [],
     this.maxToolAttempts = 25,
     http.Client? httpClient,
   }) : httpClient = httpClient ?? http.Client();
@@ -26,9 +25,6 @@ class ChatGPTChatRepository extends LLMChatRepository {
   /// The API key to use for openAI
   final String apiKey;
 
-  /// Available tools the repository can use.
-  final List<LLMTool> tools;
-
   final http.Client httpClient;
 
   /// The maximum number of tool attempts to make. for a single request.
@@ -37,12 +33,10 @@ class ChatGPTChatRepository extends LLMChatRepository {
   Uri get uri => Uri.parse('$baseUrl/v1/chat/completions');
 
   @override
-  List<LLMTool> availableTools() => tools;
-
-  @override
   Stream<LLMChunk> streamChat(
     String model, {
     required List<LLMMessage> messages,
+    List<LLMTool> tools = const [],
     dynamic extra,
     int? toolAttempts,
     bool think = false,
@@ -62,6 +56,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
           yield* toLLMStream(
             response,
             model: model,
+            tools: tools,
             messages: messages,
             toolAttempts: toolAttempts ?? maxToolAttempts,
           );
@@ -125,6 +120,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
     http.StreamedResponse response, {
     required String model,
     required List<LLMMessage> messages,
+    required List<LLMTool> tools,
     dynamic extra,
     Map<String, dynamic> options = const {},
     int toolAttempts = 5,

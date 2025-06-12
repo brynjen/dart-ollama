@@ -6,14 +6,10 @@ void main() {
   group('Testing Ollama Chat Repository', () {
     late LLMChatRepository repository;
     String baseUrl = 'http://localhost:11434';
-    String thinkingModel =
-        'qwen3:0.6b'; // Thinking chat model, supports tools, thinking and completion
-    String nonThinkingModel =
-        'qwen2.5:0.5b'; // Non-thinking chat model, supports completion
-    String embeddingModel =
-        'nomic-embed-text'; // Embedding model, supports embedding
-    String visionModel =
-        'gemma3:4b'; // Multimodal model with vision support, supports vision and completion
+    String thinkingModel = 'qwen3:0.6b'; // Thinking chat model, supports tools, thinking and completion
+    String nonThinkingModel = 'qwen2.5:0.5b'; // Non-thinking chat model, supports completion
+    String embeddingModel = 'nomic-embed-text'; // Embedding model, supports embedding
+    String visionModel = 'gemma3:4b'; // Multimodal model with vision support, supports vision and completion
     setUpAll(() async {
       final ollamaRepository = OllamaRepository(baseUrl: baseUrl);
       final models = await ollamaRepository.models();
@@ -39,10 +35,7 @@ void main() {
         final stream = repository.streamChat(
           thinkingModel,
           messages: [
-            LLMMessage(
-              role: LLMRole.system,
-              content: 'Answer short and consise',
-            ),
+            LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
             LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
           ],
           think: true,
@@ -62,61 +55,45 @@ void main() {
         print('Content: $content');
       });
 
-      test(
-        'Test streaming with no thinking works on a thinking model',
-        () async {
+      test('Test streaming with no thinking works on a thinking model', () async {
+        final stream = repository.streamChat(
+          thinkingModel,
+          messages: [
+            LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+            LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
+          ],
+          think: false,
+        );
+        String thinkingContent = '';
+        String content = '';
+        await for (final chunk in stream) {
+          thinkingContent += chunk.message?.thinking ?? '';
+          content += chunk.message?.content ?? '';
+        }
+        expect(thinkingContent, isEmpty);
+        expect(content, isNotEmpty);
+        print('Content: $content');
+      });
+
+      test('Test streaming with thinking on a non-thinking model throws exception', () async {
+        // Using a smaller model that definitely doesn't support thinking
+        try {
           final stream = repository.streamChat(
-            thinkingModel,
+            nonThinkingModel, // Using a non-thinking model
             messages: [
-              LLMMessage(
-                role: LLMRole.system,
-                content: 'Answer short and consise',
-              ),
+              LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
               LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
             ],
-            think: false,
+            think: true,
           );
-          String thinkingContent = '';
-          String content = '';
-          await for (final chunk in stream) {
-            thinkingContent += chunk.message?.thinking ?? '';
-            content += chunk.message?.content ?? '';
+          await for (final _ in stream) {
+            // This should not be reached
           }
-          expect(thinkingContent, isEmpty);
-          expect(content, isNotEmpty);
-          print('Content: $content');
-        },
-      );
-
-      test(
-        'Test streaming with thinking on a non-thinking model throws exception',
-        () async {
-          // Using a smaller model that definitely doesn't support thinking
-          try {
-            final stream = repository.streamChat(
-              nonThinkingModel, // Using a non-thinking model
-              messages: [
-                LLMMessage(
-                  role: LLMRole.system,
-                  content: 'Answer short and consise',
-                ),
-                LLMMessage(role: LLMRole.user, content: 'Why is the sky blue?'),
-              ],
-              think: true,
-            );
-            await for (final _ in stream) {
-              // This should not be reached
-            }
-            fail('Should not reach here as model does not support thinking');
-          } catch (e) {
-            expect(
-              e,
-              isA<ThinkingNotAllowed>(),
-              reason: 'ThinkingNotAllowed exception should have been thrown',
-            );
-          }
-        },
-      );
+          fail('Should not reach here as model does not support thinking');
+        } catch (e) {
+          expect(e, isA<ThinkingNotAllowed>(), reason: 'ThinkingNotAllowed exception should have been thrown');
+        }
+      });
 
       test(
         'Test streaming with image on a model supporting images works',
@@ -130,15 +107,8 @@ void main() {
             final stream = repository.streamChat(
               visionModel,
               messages: [
-                LLMMessage(
-                  role: LLMRole.system,
-                  content: 'Answer short and consise',
-                ),
-                LLMMessage(
-                  role: LLMRole.user,
-                  content: 'What does the image show?',
-                  images: [base64Image],
-                ),
+                LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+                LLMMessage(role: LLMRole.user, content: 'What does the image show?', images: [base64Image]),
               ],
             );
             String content = '';
@@ -169,28 +139,18 @@ void main() {
             final stream = repository.streamChat(
               thinkingModel, // qwen3:0.6b - text-only model
               messages: [
-                LLMMessage(
-                  role: LLMRole.system,
-                  content: 'Answer short and consise',
-                ),
-                LLMMessage(
-                  role: LLMRole.user,
-                  content: 'What does the image show?',
-                  images: [base64Image],
-                ),
+                LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+                LLMMessage(role: LLMRole.user, content: 'What does the image show?', images: [base64Image]),
               ],
             );
 
             await for (final _ in stream) {
               // This should not be reached
             }
-            fail(
-              'Should not reach here as text-only model should reject vision requests',
-            );
+            fail('Should not reach here as text-only model should reject vision requests');
           }, throwsA(isA<VisionNotAllowed>()));
         },
-        skip:
-            'Vision test requires large model not suitable for GitHub Actions',
+        skip: 'Vision test requires large model not suitable for GitHub Actions',
       );
     });
 
@@ -198,16 +158,14 @@ void main() {
       test('Test tool works with thinking model', () async {
         final tool = TestCalculatorTool();
         expect(tool.counterUsed, 0);
-        repository = OllamaChatRepository(baseUrl: baseUrl, tools: [tool]);
+        repository = OllamaChatRepository(baseUrl: baseUrl);
         final stream = repository.streamChat(
           thinkingModel,
           messages: [
-            LLMMessage(
-              role: LLMRole.system,
-              content: 'Answer short and consise. Use tools.',
-            ),
+            LLMMessage(role: LLMRole.system, content: 'Answer short and consise. Use tools.'),
             LLMMessage(role: LLMRole.user, content: 'What is 2 + 2?'),
           ],
+          tools: [tool],
           think: true,
         );
         String content = '';
@@ -231,27 +189,22 @@ void main() {
         // Note: Using embedding model which doesn't support chat at all
         // Most modern chat models actually support tools, so this tests the broader case
         final tool = TestCalculatorTool();
-        repository = OllamaChatRepository(baseUrl: baseUrl, tools: [tool]);
+        repository = OllamaChatRepository(baseUrl: baseUrl);
 
-        expect(
-          () async {
-            final stream = repository.streamChat(
-              embeddingModel, // This model doesn't support chat at all
-              messages: [
-                LLMMessage(
-                  role: LLMRole.system,
-                  content: 'Answer short and consise',
-                ),
-                LLMMessage(role: LLMRole.user, content: 'What is 2 + 2?'),
-              ],
-            );
-            await for (final _ in stream) {
-              // This should not be reached
-            }
-            fail('Should not reach here as model does not support chat');
-          },
-          throwsA(isA<Exception>()),
-        ); // Changed to generic Exception since this model doesn't support chat at all
+        expect(() async {
+          final stream = repository.streamChat(
+            embeddingModel, // This model doesn't support chat at all
+            messages: [
+              LLMMessage(role: LLMRole.system, content: 'Answer short and consise'),
+              LLMMessage(role: LLMRole.user, content: 'What is 2 + 2?'),
+            ],
+            tools: [tool],
+          );
+          await for (final _ in stream) {
+            // This should not be reached
+          }
+          fail('Should not reach here as model does not support chat');
+        }, throwsA(isA<Exception>())); // Changed to generic Exception since this model doesn't support chat at all
       });
 
       test('Test multiple tools works with thinking model', () async {
@@ -259,23 +212,14 @@ void main() {
         final formatterTool = TestResultFormatterTool();
         expect(tool.counterUsed, 0);
         expect(formatterTool.counterUsed, 0);
-        repository = OllamaChatRepository(
-          baseUrl: baseUrl,
-          tools: [tool, formatterTool],
-        );
+        repository = OllamaChatRepository(baseUrl: baseUrl);
         final stream = repository.streamChat(
           thinkingModel,
           messages: [
-            LLMMessage(
-              role: LLMRole.system,
-              content: 'Answer short and consise. Use tools.',
-            ),
-            LLMMessage(
-              role: LLMRole.user,
-              content:
-                  'What is 2 + 2? And show the result as formatted by the tool',
-            ),
+            LLMMessage(role: LLMRole.system, content: 'Answer short and consise. Use tools.'),
+            LLMMessage(role: LLMRole.user, content: 'What is 2 + 2? And show the result as formatted by the tool'),
           ],
+          tools: [tool, formatterTool],
           think: true,
         );
         String content = '';
@@ -300,20 +244,18 @@ void main() {
       test('Test tool with array parameter of same type', () async {
         final tool = TagListTool();
         expect(tool.counterUsed, 0);
-        repository = OllamaChatRepository(baseUrl: baseUrl, tools: [tool]);
+        repository = OllamaChatRepository(baseUrl: baseUrl);
         final stream = repository.streamChat(
           thinkingModel,
           messages: [
-            LLMMessage(
-              role: LLMRole.system,
-              content: 'Answer short and consise. Use tools.',
-            ),
+            LLMMessage(role: LLMRole.system, content: 'Answer short and consise. Use tools.'),
             LLMMessage(
               role: LLMRole.user,
               content:
                   'Use the tag tool to add the tags "LLM", "is" and "cool". Give me the output of the tool as it changes the tags.',
             ),
           ],
+          tools: [tool],
           think: true,
         );
         String content = '';
@@ -333,20 +275,18 @@ void main() {
     test('Test tool with array parameter of different type', () async {
       final tool = ExtractEntitiesTool();
       expect(tool.counterUsed, 0);
-      repository = OllamaChatRepository(baseUrl: baseUrl, tools: [tool]);
+      repository = OllamaChatRepository(baseUrl: baseUrl);
       final stream = repository.streamChat(
         thinkingModel,
         messages: [
-          LLMMessage(
-            role: LLMRole.system,
-            content: 'Answer short and consise. Use tools.',
-          ),
+          LLMMessage(role: LLMRole.system, content: 'Answer short and consise. Use tools.'),
           LLMMessage(
             role: LLMRole.user,
             content:
                 'Use the extract_entities tool to extract the entities and their types from the text "The quick brown fox jumps over the lazy dog". Give me a list of all entities and their types',
           ),
         ],
+        tools: [tool],
         think: true,
       );
       String content = '';
@@ -364,10 +304,7 @@ void main() {
 
     group('Embedding tests', () {
       test('Test embedding works', () async {
-        final embeddings = await repository.embed(
-          model: embeddingModel,
-          messages: ['Hello'],
-        );
+        final embeddings = await repository.embed(model: embeddingModel, messages: ['Hello']);
         expect(embeddings, isNotEmpty);
         expect(embeddings.length, 1);
         expect(embeddings.first.embedding, isNotEmpty);
@@ -429,18 +366,8 @@ class TestCalculatorTool extends LLMTool {
       enums: ['add', 'subtract', 'multiply', 'divide'],
       isRequired: true,
     ),
-    LLMToolParam(
-      name: 'a',
-      type: 'number',
-      description: 'First operand',
-      isRequired: true,
-    ),
-    LLMToolParam(
-      name: 'b',
-      type: 'number',
-      description: 'Second operand',
-      isRequired: true,
-    ),
+    LLMToolParam(name: 'a', type: 'number', description: 'First operand', isRequired: true),
+    LLMToolParam(name: 'b', type: 'number', description: 'Second operand', isRequired: true),
   ];
 }
 
@@ -464,12 +391,7 @@ class TestResultFormatterTool extends LLMTool {
 
   @override
   List<LLMToolParam> get parameters => [
-    LLMToolParam(
-      name: 'result',
-      type: 'string',
-      description: 'The calculator tool result to format',
-      isRequired: true,
-    ),
+    LLMToolParam(name: 'result', type: 'string', description: 'The calculator tool result to format', isRequired: true),
   ];
 }
 
@@ -486,11 +408,7 @@ class TagListTool extends LLMTool {
       type: "array",
       description: "A list of tags to join",
       isRequired: true,
-      items: LLMToolParam(
-        name: "tag",
-        type: "string",
-        description: "A single tag",
-      ),
+      items: LLMToolParam(name: "tag", type: "string", description: "A single tag"),
       minItems: 1,
       uniqueItems: true,
     ),

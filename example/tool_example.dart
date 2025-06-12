@@ -7,10 +7,7 @@ Future<void> main() async {
   final calculatorTool = CalculatorTool();
   final formatterTool = ResultFormatterTool();
 
-  final chatRepository = OllamaChatRepository(
-    baseUrl: 'http://localhost:11434',
-    tools: [calculatorTool, formatterTool],
-  );
+  final chatRepository = OllamaChatRepository(baseUrl: 'http://localhost:11434');
 
   final ollamaRepository = OllamaRepository(baseUrl: 'http://localhost:11434');
 
@@ -20,15 +17,15 @@ Future<void> main() async {
   print('💬 Starting conversation with tools...\n');
 
   // Example 1: Simple calculation
-  await _runCalculationExample(chatRepository);
+  await _runCalculationExample(chatRepository, tools: [calculatorTool, formatterTool]);
 
   print('\n${'=' * 50}\n');
 
   // Example 2: Complex calculation with formatting
-  await _runComplexCalculationExample(chatRepository);
+  await _runComplexCalculationExample(chatRepository, tools: [calculatorTool, formatterTool]);
 }
 
-Future<void> _runCalculationExample(OllamaChatRepository chatRepository) async {
+Future<void> _runCalculationExample(OllamaChatRepository chatRepository, {List<LLMTool> tools = const []}) async {
   print('📊 Example 1: Simple Calculator Tool');
   print('Question: What is 15 * 7?');
 
@@ -42,6 +39,7 @@ Future<void> _runCalculationExample(OllamaChatRepository chatRepository) async {
       ),
       LLMMessage(role: LLMRole.user, content: 'What is 15 * 7?'),
     ],
+    tools: tools,
     think: true,
   );
 
@@ -59,9 +57,7 @@ Future<void> _runCalculationExample(OllamaChatRepository chatRepository) async {
   print(responseContent);
 }
 
-Future<void> _runComplexCalculationExample(
-  OllamaChatRepository chatRepository,
-) async {
+Future<void> _runComplexCalculationExample(OllamaChatRepository chatRepository, {List<LLMTool> tools = const []}) async {
   print('🔢 Example 2: Complex Calculation with Formatting');
   print('Question: Calculate (25 + 15) ÷ 8 and format the result nicely');
 
@@ -75,10 +71,10 @@ Future<void> _runComplexCalculationExample(
       ),
       LLMMessage(
         role: LLMRole.user,
-        content:
-            'Calculate (25 + 15) ÷ 8 and format the result in a nice way using the formatter tool',
+        content: 'Calculate (25 + 15) ÷ 8 and format the result in a nice way using the formatter tool',
       ),
     ],
+    tools: tools,
     think: true,
   );
 
@@ -96,10 +92,7 @@ Future<void> _runComplexCalculationExample(
   print(responseContent);
 }
 
-Future<void> _ensureModelAvailable(
-  OllamaRepository repository,
-  String modelName,
-) async {
+Future<void> _ensureModelAvailable(OllamaRepository repository, String modelName) async {
   final models = await repository.models();
   if (!models.any((model) => model.name == modelName)) {
     print('📥 Model $modelName not found. Pulling...');
@@ -144,18 +137,8 @@ class CalculatorTool extends LLMTool {
       enums: ['add', 'subtract', 'multiply', 'divide'],
       isRequired: true,
     ),
-    LLMToolParam(
-      name: 'a',
-      type: 'number',
-      description: 'First number',
-      isRequired: true,
-    ),
-    LLMToolParam(
-      name: 'b',
-      type: 'number',
-      description: 'Second number',
-      isRequired: true,
-    ),
+    LLMToolParam(name: 'a', type: 'number', description: 'First number', isRequired: true),
+    LLMToolParam(name: 'b', type: 'number', description: 'Second number', isRequired: true),
   ];
 
   @override
@@ -195,17 +178,11 @@ class ResultFormatterTool extends LLMTool {
   String get name => 'result_formatter';
 
   @override
-  String get description =>
-      'Format mathematical results in a nice, readable way with decorations';
+  String get description => 'Format mathematical results in a nice, readable way with decorations';
 
   @override
   List<LLMToolParam> get parameters => [
-    LLMToolParam(
-      name: 'result',
-      type: 'string',
-      description: 'The mathematical result to format',
-      isRequired: true,
-    ),
+    LLMToolParam(name: 'result', type: 'string', description: 'The mathematical result to format', isRequired: true),
     LLMToolParam(
       name: 'style',
       type: 'string',

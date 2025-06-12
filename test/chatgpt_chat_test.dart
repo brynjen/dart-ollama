@@ -52,7 +52,7 @@ void main() {
       test('Test tool works', () async {
         final tool = TestCalculatorTool();
         expect(tool.counterUsed, 0);
-        repository = ChatGPTChatRepository(apiKey: apiKey, tools: [tool]);
+        repository = ChatGPTChatRepository(apiKey: apiKey);
         final stream = repository.streamChat(
           model,
           messages: [
@@ -62,6 +62,7 @@ void main() {
             ),
             LLMMessage(role: LLMRole.user, content: 'What is 2 + 2?'),
           ],
+          tools: [tool]
         );
         String combinedContent = '';
         await for (final chunk in stream) {
