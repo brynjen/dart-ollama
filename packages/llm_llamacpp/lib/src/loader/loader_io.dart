@@ -1,0 +1,83 @@
+import 'dart:ffi';
+import 'dart:io';
+
+import 'package:path/path.dart' as path;
+
+/// Load the llama.cpp library for pure Dart (non-Flutter) applications.
+DynamicLibrary loadLibrary() {
+  final libraryName = _getLibraryName();
+
+  // Try multiple locations in order of preference
+  final searchPaths = _getSearchPaths(libraryName);
+
+  for (final searchPath in searchPaths) {
+    if (File(searchPath).existsSync()) {
+      try {
+        return DynamicLibrary.open(searchPath);
+      } catch (e) {
+        // Continue to next path
+      }
+    }
+  }
+
+  // Last resort: try system library path
+  try {
+    return DynamicLibrary.open(libraryName);
+  } catch (e) {
+    throw StateError(
+      'Failed to load llama.cpp library. Searched paths:\n'
+      '${searchPaths.join('\n')}\n'
+      'Also tried system path: $libraryName\n'
+      'Error: $e',
+    );
+  }
+}
+
+String _getLibraryName() {
+  if (Platform.isWindows) {
+    return 'llama.dll';
+  } else if (Platform.isMacOS) {
+    return 'libllama.dylib';
+  } else if (Platform.isLinux) {
+    return 'libllama.so';
+  } else {
+    throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
+  }
+}
+
+List<String> _getSearchPaths(String libraryName) {
+  final paths = <String>[];
+
+  // 1. Current directory
+  paths.add(path.join(Directory.current.path, libraryName));
+
+  // 2. Next to the executable
+  final executableDir = path.dirname(Platform.resolvedExecutable);
+  paths.add(path.join(executableDir, libraryName));
+
+  // 3. In lib/ subdirectory next to executable
+  paths.add(path.join(executableDir, 'lib', libraryName));
+
+  // 4. Package's native libs directory (for development)
+  // This handles the case where we're running from the package directory
+  final scriptDir = path.dirname(Platform.script.toFilePath());
+  paths.add(path.join(scriptDir, '..', 'src', libraryName));
+
+  // 5. Standard system paths
+  if (Platform.isLinux) {
+    paths.addAll([
+      '/usr/local/lib/$libraryName',
+      '/usr/lib/$libraryName',
+      '/usr/lib/x86_64-linux-gnu/$libraryName',
+      '/usr/lib/aarch64-linux-gnu/$libraryName',
+    ]);
+  } else if (Platform.isMacOS) {
+    paths.addAll([
+      '/usr/local/lib/$libraryName',
+      '/opt/homebrew/lib/$libraryName',
+    ]);
+  }
+
+  return paths;
+}
+

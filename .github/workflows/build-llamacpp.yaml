@@ -1,0 +1,301 @@
+name: Build llama.cpp
+
+on:
+  workflow_dispatch:
+    inputs:
+      llama_cpp_version:
+        description: 'llama.cpp version/tag to build'
+        required: true
+        default: 'b5000'
+  push:
+    paths:
+      - '.github/workflows/build-llamacpp.yaml'
+    branches:
+      - main
+
+env:
+  LLAMA_CPP_VERSION: ${{ github.event.inputs.llama_cpp_version || 'b5000' }}
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 --branch ${{ env.LLAMA_CPP_VERSION }} https://github.com/ggerganov/llama.cpp.git
+
+      - name: Build llama.cpp for Linux
+        run: |
+          cd llama.cpp
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build . --config Release -j$(nproc)
+          
+      - name: Copy artifacts
+        run: |
+          mkdir -p artifacts/linux
+          cp llama.cpp/build/libllama.so artifacts/linux/ || cp llama.cpp/build/src/libllama.so artifacts/linux/
+          cp llama.cpp/build/libggml*.so artifacts/linux/ 2>/dev/null || true
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-linux
+          path: artifacts/linux/
+
+  build-macos:
+    runs-on: macos-14  # Apple Silicon runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 --branch ${{ env.LLAMA_CPP_VERSION }} https://github.com/ggerganov/llama.cpp.git
+
+      - name: Build llama.cpp for macOS (Universal)
+        run: |
+          cd llama.cpp
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DLLAMA_METAL=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build . --config Release -j$(sysctl -n hw.ncpu)
+
+      - name: Copy artifacts
+        run: |
+          mkdir -p artifacts/macos
+          cp llama.cpp/build/libllama.dylib artifacts/macos/ || cp llama.cpp/build/src/libllama.dylib artifacts/macos/
+          cp llama.cpp/build/libggml*.dylib artifacts/macos/ 2>/dev/null || true
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-macos
+          path: artifacts/macos/
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 --branch ${{ env.LLAMA_CPP_VERSION }} https://github.com/ggerganov/llama.cpp.git
+
+      - name: Build llama.cpp for Windows
+        run: |
+          cd llama.cpp
+          mkdir build && cd build
+          cmake .. `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLAMA_BUILD_TESTS=OFF `
+            -DLLAMA_BUILD_EXAMPLES=OFF `
+            -DLLAMA_BUILD_SERVER=OFF `
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build . --config Release
+
+      - name: Copy artifacts
+        shell: pwsh
+        run: |
+          mkdir -p artifacts/windows
+          Copy-Item llama.cpp/build/bin/Release/llama.dll artifacts/windows/ -ErrorAction SilentlyContinue
+          Copy-Item llama.cpp/build/Release/llama.dll artifacts/windows/ -ErrorAction SilentlyContinue
+          Copy-Item llama.cpp/build/src/Release/llama.dll artifacts/windows/ -ErrorAction SilentlyContinue
+          Copy-Item llama.cpp/build/bin/Release/ggml*.dll artifacts/windows/ -ErrorAction SilentlyContinue
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-windows
+          path: artifacts/windows/
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Android NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 --branch ${{ env.LLAMA_CPP_VERSION }} https://github.com/ggerganov/llama.cpp.git
+
+      - name: Build llama.cpp for Android arm64-v8a
+        run: |
+          cd llama.cpp
+          mkdir build-android-arm64 && cd build-android-arm64
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build . --config Release -j$(nproc)
+
+      - name: Build llama.cpp for Android x86_64 (emulator)
+        run: |
+          cd llama.cpp
+          mkdir build-android-x64 && cd build-android-x64
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=x86_64 \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build . --config Release -j$(nproc)
+
+      - name: Copy artifacts
+        run: |
+          mkdir -p artifacts/android/arm64-v8a
+          mkdir -p artifacts/android/x86_64
+          cp llama.cpp/build-android-arm64/libllama.so artifacts/android/arm64-v8a/ || cp llama.cpp/build-android-arm64/src/libllama.so artifacts/android/arm64-v8a/
+          cp llama.cpp/build-android-x64/libllama.so artifacts/android/x86_64/ || cp llama.cpp/build-android-x64/src/libllama.so artifacts/android/x86_64/
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-android
+          path: artifacts/android/
+
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 --branch ${{ env.LLAMA_CPP_VERSION }} https://github.com/ggerganov/llama.cpp.git
+
+      - name: Build llama.cpp for iOS Device (arm64)
+        run: |
+          cd llama.cpp
+          mkdir build-ios-device && cd build-ios-device
+          cmake .. \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DLLAMA_METAL=ON \
+            -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=OFF
+          cmake --build . --config Release -- -sdk iphoneos
+
+      - name: Build llama.cpp for iOS Simulator (arm64)
+        run: |
+          cd llama.cpp
+          mkdir build-ios-sim && cd build-ios-sim
+          cmake .. \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DLLAMA_METAL=ON \
+            -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=OFF
+          cmake --build . --config Release -- -sdk iphonesimulator
+
+      - name: Create XCFramework
+        run: |
+          mkdir -p artifacts/ios
+          
+          # Find the static libraries
+          DEVICE_LIB=$(find llama.cpp/build-ios-device -name "libllama.a" -type f | head -1)
+          SIM_LIB=$(find llama.cpp/build-ios-sim -name "libllama.a" -type f | head -1)
+          
+          # Create xcframework
+          xcodebuild -create-xcframework \
+            -library "$DEVICE_LIB" \
+            -library "$SIM_LIB" \
+            -output artifacts/ios/llama.xcframework
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-ios
+          path: artifacts/ios/
+
+  package-artifacts:
+    needs: [build-linux, build-macos, build-windows, build-android, build-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts
+
+      - name: Organize artifacts into plugin structure
+        run: |
+          # Create plugin directory structure
+          mkdir -p plugin/android/src/main/jniLibs/arm64-v8a
+          mkdir -p plugin/android/src/main/jniLibs/x86_64
+          mkdir -p plugin/ios/Frameworks
+          mkdir -p plugin/macos/Libraries
+          mkdir -p plugin/linux/libs
+          mkdir -p plugin/windows/libs
+          
+          # Copy artifacts
+          cp downloaded-artifacts/llama-android/arm64-v8a/*.so plugin/android/src/main/jniLibs/arm64-v8a/ 2>/dev/null || true
+          cp downloaded-artifacts/llama-android/x86_64/*.so plugin/android/src/main/jniLibs/x86_64/ 2>/dev/null || true
+          cp -r downloaded-artifacts/llama-ios/*.xcframework plugin/ios/Frameworks/ 2>/dev/null || true
+          cp downloaded-artifacts/llama-macos/*.dylib plugin/macos/Libraries/ 2>/dev/null || true
+          cp downloaded-artifacts/llama-linux/*.so plugin/linux/libs/ 2>/dev/null || true
+          cp downloaded-artifacts/llama-windows/*.dll plugin/windows/libs/ 2>/dev/null || true
+          
+          # List what we got
+          echo "=== Plugin structure ==="
+          find plugin -type f
+
+      - name: Upload packaged plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-llamacpp-native-libs
+          path: plugin/
+
+      - name: Create Release (if tagged)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            downloaded-artifacts/llama-linux/*
+            downloaded-artifacts/llama-macos/*
+            downloaded-artifacts/llama-windows/*
+          body: |
+            Native llama.cpp libraries for llm_llamacpp package.
+            
+            Built from llama.cpp version: ${{ env.LLAMA_CPP_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

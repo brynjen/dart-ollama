@@ -13,12 +13,8 @@ import '../../domain/model/llm_embedding.dart';
 /// Repository for chatting with ChatGPT. Add api key and it should just work. For a reference of model names,
 /// see https://platform.openai.com/docs/models/overview
 class ChatGPTChatRepository extends LLMChatRepository {
-  ChatGPTChatRepository({
-    required this.apiKey,
-    this.baseUrl = "https://api.openai.com",
-    this.maxToolAttempts = 25,
-    http.Client? httpClient,
-  }) : httpClient = httpClient ?? http.Client();
+  ChatGPTChatRepository({required this.apiKey, this.baseUrl = "https://api.openai.com", this.maxToolAttempts = 25, http.Client? httpClient})
+    : httpClient = httpClient ?? http.Client();
 
   final String baseUrl;
 
@@ -41,11 +37,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
     int? toolAttempts,
     bool think = false,
   }) async* {
-    final body = {
-      'model': model,
-      'messages': messages.map((msg) => msg.toJson()).toList(growable: false),
-      'stream': true,
-    };
+    final body = {'model': model, 'messages': messages.map((msg) => msg.toJson()).toList(growable: false), 'stream': true};
     if (tools.isNotEmpty) {
       body['tools'] = tools.map((tool) => tool.toJson).toList(growable: false);
     }
@@ -53,32 +45,18 @@ class ChatGPTChatRepository extends LLMChatRepository {
     try {
       switch (response.statusCode) {
         case 200: // HttpStatus.ok
-          yield* toLLMStream(
-            response,
-            model: model,
-            tools: tools,
-            messages: messages,
-            toolAttempts: toolAttempts ?? maxToolAttempts,
-          );
+          yield* toLLMStream(response, model: model, tools: tools, messages: messages, toolAttempts: toolAttempts ?? maxToolAttempts);
         default:
           // Read the error response body
-          final errorBody = await response.stream
-              .transform(utf8.decoder)
-              .join();
-          throw Exception(
-            'OpenAI API error ${response.statusCode}: $errorBody',
-          );
+          final errorBody = await response.stream.transform(utf8.decoder).join();
+          throw Exception('OpenAI API error ${response.statusCode}: $errorBody');
       }
     } catch (e) {
       rethrow;
     }
   }
 
-  Future<http.StreamedResponse> _sendStreamingRequest(
-    String method,
-    Uri uri, {
-    Map<String, dynamic>? body,
-  }) async {
+  Future<http.StreamedResponse> _sendStreamingRequest(String method, Uri uri, {Map<String, dynamic>? body}) async {
     final request = http.StreamedRequest(method, uri);
     request.headers['content-type'] = 'application/json';
     request.headers['accept'] = 'text/event-stream';
@@ -94,23 +72,11 @@ class ChatGPTChatRepository extends LLMChatRepository {
     return httpClient.send(request);
   }
 
-  Future<http.Response> _sendNonStreamingRequest(
-    String method,
-    Uri uri, {
-    Map<String, dynamic>? body,
-  }) async {
-    final headers = {
-      'content-type': 'application/json',
-      'accept': 'application/json',
-      'authorization': 'Bearer $apiKey',
-    };
+  Future<http.Response> _sendNonStreamingRequest(String method, Uri uri, {Map<String, dynamic>? body}) async {
+    final headers = {'content-type': 'application/json', 'accept': 'application/json', 'authorization': 'Bearer $apiKey'};
 
     final response = method.toUpperCase() == 'POST'
-        ? await httpClient.post(
-            uri,
-            headers: headers,
-            body: body != null ? json.encode(body) : null,
-          )
+        ? await httpClient.post(uri, headers: headers, body: body != null ? json.encode(body) : null)
         : await httpClient.get(uri, headers: headers);
 
     return response;
@@ -125,24 +91,19 @@ class ChatGPTChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
     int toolAttempts = 5,
   }) async* {
+    List<LLMMessage> workingMessages = List.from(messages);
     Map<String, GPTToolCall> toolsToCall = {};
-    await for (final output
-        in response.stream
-            .transform(utf8.decoder)
-            .transform(GPTStreamDecoder.decoder)) {
+    await for (final output in response.stream.transform(utf8.decoder).transform(GPTStreamDecoder.decoder)) {
       if (output != '[DONE]') {
         try {
           final chunk = GPTChunk.fromJson(json.decode(output));
-          for (final toolCall
-              in chunk.choices[0].delta.toolCalls ?? <GPTToolCall>[]) {
+          for (final toolCall in chunk.choices[0].delta.toolCalls ?? <GPTToolCall>[]) {
             if (toolCall.id != null) {
               toolsToCall[toolCall.id!] = toolCall;
             } else if (toolsToCall.isNotEmpty) {
               // Only access .last if there are keys
               final lastId = toolsToCall.keys.last;
-              final updatedTool = toolsToCall[lastId]?.copyWith(
-                newFunction: toolCall.function,
-              );
+              final updatedTool = toolsToCall[lastId]?.copyWith(newFunction: toolCall.function);
               if (updatedTool != null) {
                 toolsToCall[lastId] = updatedTool;
               }
@@ -162,54 +123,27 @@ class ChatGPTChatRepository extends LLMChatRepository {
                     (toolCall) => {
                       'id': toolCall.id,
                       'type': 'function',
-                      'function': {
-                        'name': toolCall.function.name,
-                        'arguments': toolCall.function.arguments,
-                      },
+                      'function': {'name': toolCall.function.name, 'arguments': toolCall.function.arguments},
                     },
                   )
                   .toList();
 
               // Only add the assistant message if we have valid tool calls
               if (toolCallsList.isNotEmpty) {
-                messages.add(
-                  LLMMessage(
-                    content: null,
-                    role: LLMRole.assistant,
-                    toolCalls: toolCallsList,
-                  ),
-                );
+                workingMessages.add(LLMMessage(content: null, role: LLMRole.assistant, toolCalls: toolCallsList));
 
                 // Then add tool response messages
                 for (final toolCall in toolsToCall.values) {
                   final function = toolCall.function;
                   final tool = tools.firstWhere(
                     (t) => t.name == toolCall.function.name,
-                    orElse: () => throw Exception(
-                      'Tool ${toolCall.function.name} not found',
-                    ),
+                    orElse: () => throw Exception('Tool ${toolCall.function.name} not found'),
                   );
-                  final toolResponse =
-                      await tool.execute(
-                        json.decode(function.arguments),
-                        extra: extra,
-                      ) ??
-                      'Unable to use not-existing tool ${function.name}';
-                  messages.add(
-                    LLMMessage(
-                      content: toolResponse,
-                      role: LLMRole.tool,
-                      toolCallId: toolCall.id,
-                    ),
-                  );
+                  final toolResponse = await tool.execute(json.decode(function.arguments), extra: extra) ?? 'Unable to use not-existing tool ${function.name}';
+                  workingMessages.add(LLMMessage(content: toolResponse, role: LLMRole.tool, toolCallId: toolCall.id));
                   toolAttempts--;
                 }
-                yield* streamChat(
-                  model,
-                  messages: messages,
-                  toolAttempts: toolAttempts,
-                  extra: extra,
-                );
+                yield* streamChat(model, messages: workingMessages, toolAttempts: toolAttempts, extra: extra);
               }
             } else {
               print('finishReason: $finishReason');
@@ -224,22 +158,12 @@ class ChatGPTChatRepository extends LLMChatRepository {
   }
 
   @override
-  Future<List<LLMEmbedding>> embed({
-    required String model,
-    required List<String> messages,
-    Map<String, dynamic> options = const {},
-  }) async {
+  Future<List<LLMEmbedding>> embed({required String model, required List<String> messages, Map<String, dynamic> options = const {}}) async {
     final body = {'model': model, 'input': messages};
-    final response = await _sendNonStreamingRequest(
-      'POST',
-      Uri.parse('$baseUrl/v1/embeddings'),
-      body: body,
-    );
+    final response = await _sendNonStreamingRequest('POST', Uri.parse('$baseUrl/v1/embeddings'), body: body);
     switch (response.statusCode) {
       case 200: // HttpStatus.ok
-        return ChatGPTEmbeddingsResponse.fromJson(
-          json.decode(response.body),
-        ).toLLMEmbedding;
+        return ChatGPTEmbeddingsResponse.fromJson(json.decode(response.body)).toLLMEmbedding;
       default:
         print('\nError generating embedding: ${response.statusCode}');
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
