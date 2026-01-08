@@ -348,7 +348,17 @@ build_for_abi() {
 
     echo ""
     echo "Building targets: $TARGETS"
-    cmake --build . --config Release -j$(nproc) --target $TARGETS || true
+    if ! cmake --build . --config Release -j$(nproc) --target $TARGETS; then
+        echo ""
+        echo "=========================================="
+        echo "ERROR: Build failed for $ABI!"
+        echo "=========================================="
+        echo "Check the error messages above."
+        return 1
+    fi
+    
+    echo ""
+    echo "Build completed for $ABI"
 }
 
 # ==========================================
@@ -372,14 +382,23 @@ copy_libraries() {
         "$BUILD_DIR/$ABI"
     )
 
+    # Debug: show what was built
+    echo "  Searching for built libraries..."
+    find "$BUILD_DIR/$ABI" -name "*.so" -type f 2>/dev/null | head -20
+
     # Copy libllama.so
+    local found_llama=false
     for src_dir in "${SRC_DIRS[@]}"; do
         if [ -f "$src_dir/libllama.so" ]; then
             cp "$src_dir/libllama.so" "$JNILIBS_DIR/$ABI/"
-            echo "  Copied libllama.so"
+            echo "  Copied libllama.so from $src_dir"
+            found_llama=true
             break
         fi
     done
+    if [ "$found_llama" = false ]; then
+        echo "  WARNING: libllama.so not found in any expected location!"
+    fi
 
     # Copy core ggml libraries (always required)
     local GGML_DIRS=(
@@ -449,15 +468,19 @@ if [ "$BUILD_VULKAN" = "ON" ]; then
 fi
 
 # Build for x86_64 (emulator) - CPU only, no GPU
-if [ "$BUILD_X86_64" = "ON" ]; then
+# Skip x86_64 by default in Docker to speed up builds (emulator not commonly used)
+if [ "$BUILD_X86_64" = "ON" ] && [ -z "$SKIP_X86_64" ]; then
     # Temporarily disable GPU for x86_64 (emulator typically doesn't have GPU passthrough)
     SAVE_VULKAN=$BUILD_VULKAN
     SAVE_OPENCL=$BUILD_OPENCL
     BUILD_VULKAN=OFF
     BUILD_OPENCL=OFF
 
-    build_for_abi "x86_64" "android-28"
-    copy_libraries "x86_64"
+    if build_for_abi "x86_64" "android-28"; then
+        copy_libraries "x86_64"
+    else
+        echo "WARNING: x86_64 build failed, continuing with arm64..."
+    fi
 
     BUILD_VULKAN=$SAVE_VULKAN
     BUILD_OPENCL=$SAVE_OPENCL
@@ -488,6 +511,19 @@ find "$JNILIBS_DIR" -name "*.so" -type f 2>/dev/null | sort | while read f; do
 done
 
 echo ""
+echo "Essential Libraries:"
+if [ -f "$JNILIBS_DIR/arm64-v8a/libllama.so" ]; then
+    echo "  ✓ libllama.so"
+else
+    echo "  ✗ libllama.so - MISSING! Build may have failed."
+fi
+if [ -f "$JNILIBS_DIR/arm64-v8a/libggml.so" ]; then
+    echo "  ✓ libggml.so"
+else
+    echo "  ✗ libggml.so - MISSING! Build may have failed."
+fi
+
+echo ""
 echo "GPU Backend Support (arm64-v8a):"
 if [ -f "$JNILIBS_DIR/arm64-v8a/libggml-vulkan.so" ]; then
     echo "  ✓ Vulkan (broad GPU support)"
@@ -498,6 +534,20 @@ if [ -f "$JNILIBS_DIR/arm64-v8a/libggml-opencl.so" ]; then
     echo "  ✓ OpenCL (Adreno GPU optimized)"
 else
     echo "  ✗ OpenCL (not built)"
+fi
+
+# Check for critical missing libraries
+if [ ! -f "$JNILIBS_DIR/arm64-v8a/libllama.so" ] || [ ! -f "$JNILIBS_DIR/arm64-v8a/libggml.so" ]; then
+    echo ""
+    echo "=========================================="
+    echo "WARNING: Essential libraries are missing!"
+    echo "=========================================="
+    echo "The build may have failed. Check the build output above for errors."
+    echo "Common issues:"
+    echo "  - CMake configuration errors"
+    echo "  - Compilation errors in llama.cpp"
+    echo "  - Missing dependencies"
+    exit 1
 fi
 
 echo ""
