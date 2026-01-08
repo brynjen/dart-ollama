@@ -28,8 +28,12 @@ android {
 
     compileSdkVersion 34
 
+    // Specify NDK version for consistent builds
+    ndkVersion "26.3.11579264"
+
     defaultConfig {
-        minSdkVersion 24
+        // Minimum SDK 28 for better native library support
+        minSdkVersion 28
     }
 
     sourceSets {
@@ -38,4 +42,3 @@ android {
         }
     }
 }
-

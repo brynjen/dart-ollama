@@ -8,27 +8,53 @@ import 'package:llm_core/llm_core.dart';
 
 import 'bindings/llama_bindings.dart';
 import 'llamacpp_model.dart';
+import 'llamacpp_repository.dart';
 import 'loader/loader.dart';
 import 'prompt_template.dart';
 
 /// Repository for chatting with llama.cpp models locally.
 ///
-/// This repository runs inference in a dedicated isolate to keep the
-/// main thread responsive.
+/// This repository implements the [LLMChatRepository] contract and focuses
+/// solely on chat operations. Model management (loading, unloading, discovery)
+/// should be handled by [LlamaCppRepository].
 ///
-/// Example:
+/// Example with model from repository:
 /// ```dart
-/// final repo = LlamaCppChatRepository();
-/// await repo.loadModel('/path/to/model.gguf');
+/// // Use LlamaCppRepository for model management
+/// final modelRepo = LlamaCppRepository();
+/// final model = await modelRepo.loadModel('/path/to/model.gguf');
 ///
-/// final stream = repo.streamChat('model', messages: [
+/// // Use LlamaCppChatRepository for chat
+/// final chatRepo = LlamaCppChatRepository.withModel(model, modelRepo.bindings);
+///
+/// final stream = chatRepo.streamChat('model', messages: [
 ///   LLMMessage(role: LLMRole.user, content: 'Hello!')
 /// ]);
 /// await for (final chunk in stream) {
 ///   print(chunk.message?.content ?? '');
 /// }
 /// ```
+///
+/// Example standalone (loads model internally - for backwards compatibility):
+/// ```dart
+/// final chatRepo = LlamaCppChatRepository();
+/// await chatRepo.loadModel('/path/to/model.gguf');
+///
+/// final stream = chatRepo.streamChat('model', messages: [
+///   LLMMessage(role: LLMRole.user, content: 'Hello!')
+/// ]);
+/// await for (final chunk in stream) {
+///   print(chunk.message?.content ?? '');
+/// }
+///
+/// chatRepo.dispose();
+/// ```
 class LlamaCppChatRepository extends LLMChatRepository {
+  /// Creates a chat repository with default settings.
+  ///
+  /// Use [loadModel] to load a model before calling [streamChat].
+  /// For proper separation of concerns, prefer using [LlamaCppChatRepository.withModel]
+  /// and managing models through [LlamaCppRepository].
   LlamaCppChatRepository({
     this.contextSize = 4096,
     this.batchSize = 512,
@@ -36,7 +62,30 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.nGpuLayers = 0,
     this.maxToolAttempts = 25,
     PromptTemplate? template,
-  }) : _template = template;
+  }) : _template = template,
+       _ownsModel = true;
+
+  /// Creates a chat repository with an already-loaded model.
+  ///
+  /// This is the preferred constructor when using [LlamaCppRepository] for
+  /// model management, as it maintains proper separation of concerns.
+  ///
+  /// [model] - A model loaded via [LlamaCppRepository.loadModel].
+  /// [bindings] - The bindings from [LlamaCppRepository.bindings].
+  LlamaCppChatRepository.withModel(
+    LlamaCppModel model,
+    LlamaBindings bindings, {
+    this.contextSize = 4096,
+    this.batchSize = 512,
+    this.threads,
+    this.nGpuLayers = 0,
+    this.maxToolAttempts = 25,
+    PromptTemplate? template,
+  }) : _template = template,
+       _model = model,
+       _bindings = bindings,
+       _backendInitialized = true,
+       _ownsModel = false;
 
   /// The context size (number of tokens).
   final int contextSize;
@@ -53,12 +102,16 @@ class LlamaCppChatRepository extends LLMChatRepository {
   /// Maximum number of tool calling attempts.
   final int maxToolAttempts;
 
+  /// Whether this repository owns and should dispose the model.
+  final bool _ownsModel;
+
   PromptTemplate? _template;
   LlamaBindings? _bindings;
   LlamaCppModel? _model;
   bool _backendInitialized = false;
 
   /// The currently loaded model, if any.
+  @Deprecated('Use LlamaCppRepository for model management')
   LlamaCppModel? get model => _model;
 
   /// Whether a model is currently loaded.
@@ -74,6 +127,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
   ///
   /// This is called automatically when loading a model, but can be called
   /// explicitly to pre-initialize.
+  @Deprecated('Use LlamaCppRepository for backend management')
   void initializeBackend() {
     if (_backendInitialized) return;
 
@@ -87,11 +141,12 @@ class LlamaCppChatRepository extends LLMChatRepository {
   ///
   /// [modelPath] - Path to the GGUF model file.
   /// [options] - Optional loading options.
+  @Deprecated('Use LlamaCppRepository.loadModel() instead for proper separation of concerns')
   Future<void> loadModel(String modelPath, {ModelLoadOptions options = const ModelLoadOptions()}) async {
     initializeBackend();
 
     // Unload any existing model
-    if (_model != null) {
+    if (_model != null && _ownsModel) {
       _model!.dispose();
       _model = null;
     }
@@ -107,8 +162,9 @@ class LlamaCppChatRepository extends LLMChatRepository {
   }
 
   /// Unloads the current model.
+  @Deprecated('Use LlamaCppRepository.unloadModel() instead')
   void unloadModel() {
-    if (_model != null) {
+    if (_model != null && _ownsModel) {
       _model!.dispose();
       _model = null;
     }
@@ -124,7 +180,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     bool think = false,
   }) async* {
     if (_model == null) {
-      throw ModelLoadException('No model loaded. Call loadModel() first.');
+      throw ModelLoadException('No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().');
     }
 
     final currentAttempts = toolAttempts ?? maxToolAttempts;
@@ -447,12 +503,20 @@ class LlamaCppChatRepository extends LLMChatRepository {
   }
 
   /// Releases all resources.
+  ///
+  /// If using [LlamaCppChatRepository.withModel], only chat-specific resources
+  /// are released. The model should be unloaded via [LlamaCppRepository].
   void dispose() {
-    unloadModel();
-    if (_backendInitialized && _bindings != null) {
-      _bindings!.llama_backend_free();
-      _backendInitialized = false;
+    if (_ownsModel) {
+      unloadModel();
+      if (_backendInitialized && _bindings != null) {
+        _bindings!.llama_backend_free();
+        _backendInitialized = false;
+      }
     }
+    // Clear references but don't dispose if we don't own the model
+    _model = null;
+    _bindings = null;
   }
 }
 

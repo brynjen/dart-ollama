@@ -1,4 +1,6 @@
-# Dockerfile for building llama.cpp Android libraries with GPU support
+# Dockerfile for building llama.cpp Android libraries
+# Provides a consistent Linux environment for cross-compilation
+#
 # Usage:
 #   docker build -t llamacpp-android-builder -f scripts/Dockerfile.android-build .
 #   docker run --rm -v $(pwd):/workspace llamacpp-android-builder
@@ -8,41 +10,29 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV ANDROID_NDK_HOME=/opt/android-sdk/ndk/26.3.11579264
-ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:/usr/local/bin"
+ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:/opt/cmake/bin"
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     git \
-    cmake \
     ninja-build \
-    glslang-tools \
     python3 \
     wget \
     curl \
     unzip \
     openjdk-17-jdk \
     build-essential \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Build glslc from shaderc source (required for Vulkan shader compilation)
-# This takes a few minutes but is cached after first build
-RUN echo "Building shaderc (glslc) from source..." && \
-    git clone https://github.com/google/shaderc /tmp/shaderc && \
-    cd /tmp/shaderc && \
-    ./utils/git-sync-deps && \
-    mkdir build && cd build && \
-    cmake -GNinja -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local \
-          -DSHADERC_SKIP_TESTS=ON \
-          .. && \
-    ninja glslc/glslc && \
-    cp glslc/glslc /usr/local/bin/glslc && \
-    rm -rf /tmp/shaderc
+# Install newer CMake (3.28+) for KleidiAI FetchContent support
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz && \
+    tar -xzf cmake-3.28.3-linux-x86_64.tar.gz && \
+    mv cmake-3.28.3-linux-x86_64 /opt/cmake && \
+    rm cmake-3.28.3-linux-x86_64.tar.gz && \
+    cmake --version
 
-# Verify glslc is available
-RUN which glslc && glslc --version
-
-# Download and install Android SDK command-line tools
+# Install Android SDK command-line tools
 RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
     cd ${ANDROID_SDK_ROOT}/cmdline-tools && \
     wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip && \
@@ -54,7 +44,10 @@ RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
 RUN yes | sdkmanager --licenses && \
     sdkmanager "ndk;26.3.11579264"
 
+# Configure git to trust mounted workspace
+RUN git config --global --add safe.directory '*'
+
 WORKDIR /workspace
 
-# Default command: run the build script
+# Run the build script
 CMD ["./scripts/build-android-libs.sh"]

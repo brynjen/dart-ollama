@@ -39,59 +39,31 @@ DynamicLibrary loadLibrary() {
 /// Pre-load ggml dependency libraries on Android.
 ///
 /// On Android, shared libraries must be loaded in dependency order.
-/// libllama.so depends on libggml.so which depends on libggml-base.so
-/// and libggml-cpu.so. GPU backends (Vulkan, OpenCL) are optional and
-/// loaded silently - if not present, CPU inference continues to work.
+/// libllama.so depends on libggml.so which depends on libggml-base.so.
+///
+/// CPU Hardware Acceleration:
+/// The libraries are built with GGML_BACKEND_DL=ON and GGML_CPU_ALL_VARIANTS=ON.
+/// This means libggml.so will dynamically load the optimal CPU backend variant
+/// at runtime based on device capabilities (ARM dotprod, SVE, SME2, etc.).
 ///
 /// Load order:
 /// 1. libggml-base.so (base GGML library)
-/// 2. libggml-cpu.so (CPU backend - required)
-/// 3. libggml-vulkan.so (Vulkan GPU backend - optional)
-/// 4. libggml-opencl.so (OpenCL/Adreno GPU backend - optional)
-/// 5. libggml.so (GGML coordinator that manages backends)
+/// 2. libggml.so (GGML coordinator - dynamically loads CPU backends)
 void _loadAndroidDependencies() {
-  // Required dependencies - these must load successfully
-  const requiredDependencies = [
-    'libggml-base.so',
-    'libggml-cpu.so',
-  ];
-
-  // Optional GPU backend dependencies - fail silently if not present
-  const optionalGpuBackends = [
-    'libggml-vulkan.so', // Vulkan GPU backend (broad device support)
-    'libggml-opencl.so', // OpenCL GPU backend (Adreno optimized)
-  ];
-
-  // Final coordinator library
-  const coordinatorLibrary = 'libggml.so';
-
-  // Load required dependencies
-  for (final lib in requiredDependencies) {
-    try {
-      DynamicLibrary.open(lib);
-      print('[llm_llamacpp] Loaded dependency: $lib');
-    } catch (e) {
-      print('[llm_llamacpp] Failed to load required $lib: $e');
-      // Continue anyway - the main library load will fail with a clearer error
-    }
-  }
-
-  // Attempt to load optional GPU backends (fail silently)
-  for (final lib in optionalGpuBackends) {
-    try {
-      DynamicLibrary.open(lib);
-      print('[llm_llamacpp] Loaded GPU backend: $lib');
-    } catch (e) {
-      // GPU backends are optional - silently continue without them
-      print('[llm_llamacpp] GPU backend not available: $lib');
-    }
+  // Load base library first
+  try {
+    DynamicLibrary.open('libggml-base.so');
+    print('[llm_llamacpp] Loaded dependency: libggml-base.so');
+  } catch (e) {
+    print('[llm_llamacpp] Failed to load libggml-base.so: $e');
   }
 
   // Load the GGML coordinator library
+  // With GGML_BACKEND_DL=ON, this will dynamically load the optimal CPU backend
   try {
-    DynamicLibrary.open(coordinatorLibrary);
-    print('[llm_llamacpp] Loaded dependency: $coordinatorLibrary');
+    DynamicLibrary.open('libggml.so');
+    print('[llm_llamacpp] Loaded dependency: libggml.so');
   } catch (e) {
-    print('[llm_llamacpp] Failed to load $coordinatorLibrary: $e');
+    print('[llm_llamacpp] Failed to load libggml.so: $e');
   }
 }
