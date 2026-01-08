@@ -51,7 +51,7 @@ class _ChatScreenState extends State<ChatScreen> {
       print('[ChatScreen] Creating LlamaCppChatRepository...');
       _chatRepo = LlamaCppChatRepository(
         contextSize: 2048,
-        nGpuLayers: 0, // CPU only for mobile compatibility
+        nGpuLayers: 99, // Use GPU acceleration (offload up to 99 layers)
       );
       
       print('[ChatScreen] Loading model from: ${widget.modelPath}');
