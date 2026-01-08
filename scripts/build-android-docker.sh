@@ -36,11 +36,12 @@ echo ""
 # Run the build
 # Use --platform linux/amd64 to ensure NDK tools work on Apple Silicon Macs
 # Skip x86_64 build to speed up (only arm64 is needed for real devices)
+# Vulkan disabled by default (OpenCL is better for Qualcomm/Adreno devices)
 docker run --rm \
     --platform linux/amd64 \
     -v "$PROJECT_ROOT:/workspace" \
-    -e BUILD_VULKAN=ON \
-    -e BUILD_OPENCL=ON \
+    -e BUILD_VULKAN=${BUILD_VULKAN:-OFF} \
+    -e BUILD_OPENCL=${BUILD_OPENCL:-ON} \
     -e BUILD_X86_64=OFF \
     llamacpp-android-builder
 
