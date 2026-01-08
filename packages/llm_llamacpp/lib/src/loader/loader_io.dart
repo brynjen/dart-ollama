@@ -37,14 +37,36 @@ DynamicLibrary loadLibrary() {
   }
 }
 
-/// Try to load dependency libraries (ggml-base, ggml-cpu, ggml-cuda, ggml)
+/// Try to load dependency libraries (ggml-base, ggml-cpu, GPU backends, ggml)
+///
+/// Libraries are loaded in dependency order. GPU backends (CUDA, Vulkan, Metal)
+/// are optional and loaded silently - if not present, CPU inference continues.
 void _loadDependencies(List<String> llamaPaths) {
+  // Platform-specific library lists in dependency order
+  // GPU backends are optional - they fail silently if not present
   final depLibs = Platform.isLinux
-      ? ['libggml-base.so', 'libggml-cpu.so', 'libggml-cuda.so', 'libggml.so']
+      ? [
+          'libggml-base.so',
+          'libggml-cpu.so',
+          'libggml-cuda.so', // NVIDIA GPU (optional)
+          'libggml-vulkan.so', // Vulkan GPU (optional)
+          'libggml.so',
+        ]
       : Platform.isMacOS
-          ? ['libggml-base.dylib', 'libggml-cpu.dylib', 'libggml-metal.dylib', 'libggml.dylib']
+          ? [
+              'libggml-base.dylib',
+              'libggml-cpu.dylib',
+              'libggml-metal.dylib', // Apple Metal GPU (optional)
+              'libggml.dylib',
+            ]
           : Platform.isWindows
-              ? ['ggml-base.dll', 'ggml-cpu.dll', 'ggml-cuda.dll', 'ggml.dll']
+              ? [
+                  'ggml-base.dll',
+                  'ggml-cpu.dll',
+                  'ggml-cuda.dll', // NVIDIA GPU (optional)
+                  'ggml-vulkan.dll', // Vulkan GPU (optional)
+                  'ggml.dll',
+                ]
               : <String>[];
 
   for (final depLib in depLibs) {
@@ -55,7 +77,7 @@ void _loadDependencies(List<String> llamaPaths) {
           DynamicLibrary.open(depPath);
           break; // Successfully loaded, move to next dependency
         } catch (e) {
-          // Try next path
+          // Try next path (GPU backends are optional, so continue silently)
         }
       }
     }
