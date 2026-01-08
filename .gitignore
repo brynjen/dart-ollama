@@ -40,6 +40,7 @@ cmake_install.cmake
 Makefile
 *.o
 *.d
+compile_commands.json
 
 # Shared libraries (native binaries)
 *.so
@@ -53,8 +54,12 @@ Makefile
 # Linux native libraries folder
 **/linux/libs/
 
+# Windows native libraries folder
+**/windows/libs/
+
 # Model files (can be very large)
 *.gguf
+*.bin
 
 # APK and AAR files
 *.apk
@@ -65,6 +70,26 @@ Makefile
 **/.gradle/
 **/gradle-wrapper.jar
 
+# ========================================
+# Docker
+# ========================================
+
+# Don't ignore the Dockerfile itself, but ignore Docker build context artifacts
+.docker/
+
+# ========================================
+# Dependencies downloaded by build scripts
+# ========================================
+
+# OpenCL/Vulkan headers cloned during build
+build-android/deps/
+
 # IDE
 .idea/
 *.iml
+.vscode/
+
+# Temporary files
+*.tmp
+*.temp
+*.log

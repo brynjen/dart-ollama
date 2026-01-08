@@ -1,7 +1,26 @@
 #!/bin/bash
 # Build llama.cpp native libraries for Android from local submodule
 # Supports CPU, Vulkan (GPU), and OpenCL (Adreno GPU) backends
-# Requires: Android NDK installed, Vulkan SDK (optional), Ninja
+#
+# Requirements:
+#   - Android NDK installed
+#   - Ninja build system
+#   - glslc shader compiler (for Vulkan - install via: sudo apt install glslc)
+#
+# Usage:
+#   ./build-android-libs.sh                    # Build with all available backends
+#   BUILD_VULKAN=OFF ./build-android-libs.sh   # Build without Vulkan
+#   BUILD_OPENCL=OFF ./build-android-libs.sh   # Build without OpenCL
+#   BUILD_VULKAN=OFF BUILD_OPENCL=OFF ./build-android-libs.sh  # CPU only
+#
+# Environment Variables:
+#   BUILD_VULKAN  - ON/OFF (default: ON) - Build Vulkan GPU backend
+#   BUILD_OPENCL  - ON/OFF (default: ON) - Build OpenCL GPU backend (Adreno optimized)
+#   BUILD_X86_64  - ON/OFF (default: ON) - Build for x86_64 (emulator)
+#   BUILD_ARM64   - ON/OFF (default: ON) - Build for arm64-v8a (real devices)
+#
+# Note: On macOS, Vulkan and OpenCL backends cannot be built (no cross-compilation support)
+#       Use BUILD_VULKAN=OFF BUILD_OPENCL=OFF for Mac builds
 
 set -e
 
@@ -16,6 +35,13 @@ BUILD_VULKAN=${BUILD_VULKAN:-ON}
 BUILD_OPENCL=${BUILD_OPENCL:-ON}
 BUILD_X86_64=${BUILD_X86_64:-ON}
 BUILD_ARM64=${BUILD_ARM64:-ON}
+
+# Detect if running on macOS - disable GPU backends
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "Detected macOS - GPU backends (Vulkan/OpenCL) cannot be cross-compiled"
+    BUILD_VULKAN=OFF
+    BUILD_OPENCL=OFF
+fi
 
 # Check that llama.cpp submodule exists
 if [ ! -d "$LLAMACPP_DIR" ]; then
@@ -36,6 +62,12 @@ elif [ -d "$HOME/Android/Sdk/ndk" ]; then
     NDK_PATH=$(find "$HOME/Android/Sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
 elif [ -d "/usr/local/android-sdk/ndk" ]; then
     NDK_PATH=$(find "/usr/local/android-sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
+elif [ -d "/opt/android-sdk/ndk" ]; then
+    # Docker container path
+    NDK_PATH=$(find "/opt/android-sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
+elif [ -d "$HOME/Library/Android/sdk/ndk" ]; then
+    # macOS Android Studio path
+    NDK_PATH=$(find "$HOME/Library/Android/sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
 else
     echo "Error: Android NDK not found. Please set ANDROID_NDK_HOME environment variable."
     exit 1
@@ -43,7 +75,14 @@ fi
 
 echo "Using Android NDK: $NDK_PATH"
 TOOLCHAIN="$NDK_PATH/build/cmake/android.toolchain.cmake"
-NDK_SYSROOT="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+
+# Detect host platform for NDK prebuilt path
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    NDK_HOST="darwin-x86_64"
+else
+    NDK_HOST="linux-x86_64"
+fi
+NDK_SYSROOT="$NDK_PATH/toolchains/llvm/prebuilt/$NDK_HOST/sysroot"
 
 if [ ! -f "$TOOLCHAIN" ]; then
     echo "Error: NDK toolchain not found at $TOOLCHAIN"
@@ -322,6 +361,8 @@ copy_libraries() {
     echo ""
     echo "Copying $ABI libraries to jniLibs..."
 
+    # Clear existing libraries for this ABI to avoid stale GPU backends
+    rm -rf "$JNILIBS_DIR/$ABI"
     mkdir -p "$JNILIBS_DIR/$ABI"
 
     # Possible source directories
@@ -340,7 +381,7 @@ copy_libraries() {
         fi
     done
 
-    # Copy ggml libraries (base, cpu, vulkan, opencl)
+    # Copy core ggml libraries (always required)
     local GGML_DIRS=(
         "$BUILD_DIR/$ABI/bin"
         "$BUILD_DIR/$ABI/ggml/src"
@@ -348,7 +389,7 @@ copy_libraries() {
     )
 
     for src_dir in "${GGML_DIRS[@]}"; do
-        for lib in libggml.so libggml-base.so libggml-cpu.so libggml-vulkan.so libggml-opencl.so; do
+        for lib in libggml.so libggml-base.so libggml-cpu.so; do
             if [ -f "$src_dir/$lib" ] && [ ! -f "$JNILIBS_DIR/$ABI/$lib" ]; then
                 cp "$src_dir/$lib" "$JNILIBS_DIR/$ABI/"
                 echo "  Copied $lib"
@@ -356,17 +397,32 @@ copy_libraries() {
         done
     done
 
-    # Also check ggml subdirectories for backend libraries
-    for backend_dir in "$BUILD_DIR/$ABI/ggml/src/ggml-vulkan" "$BUILD_DIR/$ABI/ggml/src/ggml-opencl"; do
-        if [ -d "$backend_dir" ]; then
-            for lib in libggml-vulkan.so libggml-opencl.so; do
-                if [ -f "$backend_dir/$lib" ] && [ ! -f "$JNILIBS_DIR/$ABI/$lib" ]; then
-                    cp "$backend_dir/$lib" "$JNILIBS_DIR/$ABI/"
-                    echo "  Copied $lib from backend dir"
-                fi
-            done
+    # Copy Vulkan backend only if it was built (check build config)
+    if [ "$BUILD_VULKAN" = "ON" ]; then
+        for src_dir in "${GGML_DIRS[@]}" "$BUILD_DIR/$ABI/ggml/src/ggml-vulkan"; do
+            if [ -f "$src_dir/libggml-vulkan.so" ] && [ ! -f "$JNILIBS_DIR/$ABI/libggml-vulkan.so" ]; then
+                cp "$src_dir/libggml-vulkan.so" "$JNILIBS_DIR/$ABI/"
+                echo "  Copied libggml-vulkan.so (GPU backend)"
+            fi
+        done
+    fi
+
+    # Copy OpenCL backend and its loader only if it was built
+    if [ "$BUILD_OPENCL" = "ON" ] && [ "$ABI" = "arm64-v8a" ]; then
+        for src_dir in "${GGML_DIRS[@]}" "$BUILD_DIR/$ABI/ggml/src/ggml-opencl"; do
+            if [ -f "$src_dir/libggml-opencl.so" ] && [ ! -f "$JNILIBS_DIR/$ABI/libggml-opencl.so" ]; then
+                cp "$src_dir/libggml-opencl.so" "$JNILIBS_DIR/$ABI/"
+                echo "  Copied libggml-opencl.so (Adreno GPU backend)"
+            fi
+        done
+
+        # Also bundle libOpenCL.so (ICD loader) for devices without system OpenCL
+        local OPENCL_LOADER="$NDK_SYSROOT/usr/lib/aarch64-linux-android/libOpenCL.so"
+        if [ -f "$OPENCL_LOADER" ] && [ ! -f "$JNILIBS_DIR/$ABI/libOpenCL.so" ]; then
+            cp "$OPENCL_LOADER" "$JNILIBS_DIR/$ABI/"
+            echo "  Copied libOpenCL.so (OpenCL ICD loader)"
         fi
-    done
+    fi
 }
 
 # ==========================================

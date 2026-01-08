@@ -1,0 +1,40 @@
+# Dockerfile for building llama.cpp Android libraries with GPU support
+# Usage:
+#   docker build -t llamacpp-android-builder -f scripts/Dockerfile.android-build .
+#   docker run --rm -v $(pwd):/workspace llamacpp-android-builder
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV ANDROID_NDK_HOME=/opt/android-sdk/ndk/26.3.11579264
+ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin"
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    cmake \
+    ninja-build \
+    glslc \
+    python3 \
+    wget \
+    unzip \
+    openjdk-17-jdk \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install Android SDK command-line tools
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    cd ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip && \
+    unzip -q cmdline-tools.zip && \
+    mv cmdline-tools latest && \
+    rm cmdline-tools.zip
+
+# Accept licenses and install NDK
+RUN yes | sdkmanager --licenses && \
+    sdkmanager "ndk;26.3.11579264"
+
+WORKDIR /workspace
+
+# Default command: run the build script
+CMD ["./scripts/build-android-libs.sh"]
