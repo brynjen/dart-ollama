@@ -24,17 +24,20 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install shaderc (provides glslc) - try package first, then build from source
-RUN apt-get update && apt-get install -y shaderc 2>/dev/null && rm -rf /var/lib/apt/lists/* || \
-    (echo "Building shaderc from source..." && \
-     git clone --depth 1 https://github.com/google/shaderc /tmp/shaderc && \
-     cd /tmp/shaderc && \
-     ./utils/git-sync-deps && \
-     mkdir build && cd build && \
-     cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DSHADERC_SKIP_TESTS=ON .. && \
-     ninja glslc && \
-     cp glslc/glslc /usr/local/bin/ && \
-     rm -rf /tmp/shaderc)
+# Build glslc from shaderc source (required for Vulkan shader compilation)
+# This takes a few minutes but is cached after first build
+RUN echo "Building shaderc (glslc) from source..." && \
+    git clone https://github.com/google/shaderc /tmp/shaderc && \
+    cd /tmp/shaderc && \
+    ./utils/git-sync-deps && \
+    mkdir build && cd build && \
+    cmake -GNinja -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DSHADERC_SKIP_TESTS=ON \
+          .. && \
+    ninja glslc/glslc && \
+    cp glslc/glslc /usr/local/bin/glslc && \
+    rm -rf /tmp/shaderc
 
 # Verify glslc is available
 RUN which glslc && glslc --version
