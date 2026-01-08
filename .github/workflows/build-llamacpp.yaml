@@ -171,8 +171,24 @@ jobs:
         run: |
           mkdir -p artifacts/android/arm64-v8a
           mkdir -p artifacts/android/x86_64
+          
+          # Copy llama library
           cp llama.cpp/build-android-arm64/libllama.so artifacts/android/arm64-v8a/ || cp llama.cpp/build-android-arm64/src/libllama.so artifacts/android/arm64-v8a/
           cp llama.cpp/build-android-x64/libllama.so artifacts/android/x86_64/ || cp llama.cpp/build-android-x64/src/libllama.so artifacts/android/x86_64/
+          
+          # Copy ggml dependencies for arm64-v8a
+          cp llama.cpp/build-android-arm64/libggml*.so artifacts/android/arm64-v8a/ 2>/dev/null || true
+          cp llama.cpp/build-android-arm64/ggml/src/libggml*.so artifacts/android/arm64-v8a/ 2>/dev/null || true
+          
+          # Copy ggml dependencies for x86_64
+          cp llama.cpp/build-android-x64/libggml*.so artifacts/android/x86_64/ 2>/dev/null || true
+          cp llama.cpp/build-android-x64/ggml/src/libggml*.so artifacts/android/x86_64/ 2>/dev/null || true
+          
+          # List what we copied
+          echo "=== arm64-v8a libraries ==="
+          ls -la artifacts/android/arm64-v8a/
+          echo "=== x86_64 libraries ==="
+          ls -la artifacts/android/x86_64/
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
@@ -227,16 +243,38 @@ jobs:
       - name: Create XCFramework
         run: |
           mkdir -p artifacts/ios
+          mkdir -p temp/device temp/simulator
           
-          # Find the static libraries
-          DEVICE_LIB=$(find llama.cpp/build-ios-device -name "libllama.a" -type f | head -1)
-          SIM_LIB=$(find llama.cpp/build-ios-sim -name "libllama.a" -type f | head -1)
+          # Find and copy all static libraries for device
+          find llama.cpp/build-ios-device -name "*.a" -type f -exec cp {} temp/device/ \;
           
-          # Create xcframework
+          # Find and copy all static libraries for simulator
+          find llama.cpp/build-ios-sim -name "*.a" -type f -exec cp {} temp/simulator/ \;
+          
+          # List what we found
+          echo "=== Device libraries ==="
+          ls -la temp/device/
+          echo "=== Simulator libraries ==="
+          ls -la temp/simulator/
+          
+          # Create a combined static library for device
+          cd temp/device
+          libtool -static -o libllama_combined.a *.a
+          cd ../..
+          
+          # Create a combined static library for simulator
+          cd temp/simulator
+          libtool -static -o libllama_combined.a *.a
+          cd ../..
+          
+          # Create xcframework from the combined libraries
           xcodebuild -create-xcframework \
-            -library "$DEVICE_LIB" \
-            -library "$SIM_LIB" \
+            -library temp/device/libllama_combined.a \
+            -library temp/simulator/libllama_combined.a \
             -output artifacts/ios/llama.xcframework
+          
+          # Cleanup
+          rm -rf temp
 
       - name: Upload iOS artifacts
         uses: actions/upload-artifact@v4

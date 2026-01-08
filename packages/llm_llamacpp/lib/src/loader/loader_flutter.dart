@@ -8,8 +8,17 @@ import 'dart:io';
 /// and accessible via the standard plugin mechanism.
 DynamicLibrary loadLibrary() {
   if (Platform.isAndroid) {
-    // Android: Flutter loads JNI libs automatically
-    return DynamicLibrary.open('libllama.so');
+    // Android: Pre-load ggml dependencies before loading libllama.so
+    // These libraries must be loaded in dependency order
+    _loadAndroidDependencies();
+    try {
+      final lib = DynamicLibrary.open('libllama.so');
+      print('[llm_llamacpp] Successfully loaded libllama.so');
+      return lib;
+    } catch (e) {
+      print('[llm_llamacpp] ERROR loading libllama.so: $e');
+      rethrow;
+    }
   } else if (Platform.isIOS) {
     // iOS: Framework is linked statically or via xcframework
     return DynamicLibrary.process();
@@ -24,6 +33,30 @@ DynamicLibrary loadLibrary() {
     return DynamicLibrary.open('libllama.so');
   } else {
     throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
+  }
+}
+
+/// Pre-load ggml dependency libraries on Android.
+///
+/// On Android, shared libraries must be loaded in dependency order.
+/// libllama.so depends on libggml.so which depends on libggml-base.so
+/// and libggml-cpu.so. We load them silently, ignoring errors for
+/// optional libraries (like libggml-cuda.so which may not be present).
+void _loadAndroidDependencies() {
+  // Load in dependency order: base libraries first, then composite libraries
+  final dependencies = [
+    'libggml-base.so',
+    'libggml-cpu.so',
+    'libggml.so',
+  ];
+
+  for (final lib in dependencies) {
+    try {
+      DynamicLibrary.open(lib);
+      print('[llm_llamacpp] Loaded dependency: $lib');
+    } catch (e) {
+      print('[llm_llamacpp] Failed to load $lib: $e');
+    }
   }
 }
 

@@ -407,6 +407,9 @@ void _runInference(_InferenceRequest request) {
       return;
     }
 
+    // Get vocab from model for tokenization
+    final vocab = bindings.llama_model_get_vocab(model);
+
     // Create context
     final ctxParams = bindings.llama_context_default_params();
     ctxParams.n_ctx = request.contextSize;
@@ -424,13 +427,13 @@ void _runInference(_InferenceRequest request) {
     }
 
     try {
-      // Tokenize prompt
+      // Tokenize prompt using vocab
       final promptPtr = request.prompt.toNativeUtf8();
       final maxTokens = request.prompt.length + 256;
       final tokensPtr = calloc<Int32>(maxTokens);
 
       final nTokens = bindings.llama_tokenize(
-        model,
+        vocab, // Use vocab instead of model
         promptPtr.cast(),
         request.prompt.length,
         tokensPtr,
@@ -446,16 +449,18 @@ void _runInference(_InferenceRequest request) {
         return;
       }
 
-      // Evaluate prompt
-      var batch = bindings.llama_batch_get_one(tokensPtr, nTokens, 0, 0);
+      // Evaluate prompt using batch
+      var batch = bindings.llama_batch_get_one(tokensPtr, nTokens);
       if (bindings.llama_decode(ctx, batch) != 0) {
         calloc.free(tokensPtr);
         request.sendPort.send(_InferenceError('Failed to evaluate prompt'));
         return;
       }
 
-      // Set up sampling
-      final sampler = bindings.llama_sampler_chain_init(nullptr);
+      // Set up sampling chain
+      final samplerParams = bindings.llama_sampler_chain_default_params();
+      final sampler = bindings.llama_sampler_chain_init(samplerParams);
+      
       bindings.llama_sampler_chain_add(
         sampler,
         bindings.llama_sampler_init_temp(request.temperature),
@@ -474,24 +479,23 @@ void _runInference(_InferenceRequest request) {
       );
 
       // Generate tokens
-      final bufferSize = 256;
+      const bufferSize = 256;
       final pieceBuffer = calloc<Char>(bufferSize);
       var generatedTokens = 0;
-      var currentPos = nTokens;
       final newTokenPtr = calloc<Int32>(1);
 
       while (generatedTokens < request.maxTokens) {
         // Sample next token
         final newToken = bindings.llama_sampler_sample(sampler, ctx, -1);
 
-        // Check for end of generation
-        if (bindings.llama_token_is_eog(model, newToken)) {
+        // Check for end of generation using vocab
+        if (bindings.llama_vocab_is_eog(vocab, newToken)) {
           break;
         }
 
-        // Convert token to text
+        // Convert token to text using vocab
         final pieceLen = bindings.llama_token_to_piece(
-          model,
+          vocab, // Use vocab instead of model
           newToken,
           pieceBuffer,
           bufferSize,
@@ -518,12 +522,11 @@ void _runInference(_InferenceRequest request) {
 
         // Decode the new token
         newTokenPtr.value = newToken;
-        batch = bindings.llama_batch_get_one(newTokenPtr, 1, currentPos, 0);
+        batch = bindings.llama_batch_get_one(newTokenPtr, 1);
         if (bindings.llama_decode(ctx, batch) != 0) {
           break;
         }
 
-        currentPos++;
         generatedTokens++;
       }
 
@@ -546,4 +549,3 @@ void _runInference(_InferenceRequest request) {
     request.sendPort.send(_InferenceError(e.toString()));
   }
 }
-

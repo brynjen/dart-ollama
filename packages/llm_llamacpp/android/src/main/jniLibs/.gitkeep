@@ -1,5 +1,0 @@
-# Native libraries will be placed here by CI
-# arm64-v8a/libllama.so
-# armeabi-v7a/libllama.so (optional)
-# x86_64/libllama.so (optional)
-

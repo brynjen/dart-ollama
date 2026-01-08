@@ -10,12 +10,16 @@ DynamicLibrary loadLibrary() {
   // Try multiple locations in order of preference
   final searchPaths = _getSearchPaths(libraryName);
 
+  // First, try to load dependency libraries (ggml) from the same directories
+  _loadDependencies(searchPaths);
+
   for (final searchPath in searchPaths) {
     if (File(searchPath).existsSync()) {
       try {
         return DynamicLibrary.open(searchPath);
       } catch (e) {
         // Continue to next path
+        print('Failed to load from $searchPath: $e');
       }
     }
   }
@@ -30,6 +34,31 @@ DynamicLibrary loadLibrary() {
       'Also tried system path: $libraryName\n'
       'Error: $e',
     );
+  }
+}
+
+/// Try to load dependency libraries (ggml-base, ggml-cpu, ggml-cuda, ggml)
+void _loadDependencies(List<String> llamaPaths) {
+  final depLibs = Platform.isLinux
+      ? ['libggml-base.so', 'libggml-cpu.so', 'libggml-cuda.so', 'libggml.so']
+      : Platform.isMacOS
+          ? ['libggml-base.dylib', 'libggml-cpu.dylib', 'libggml-metal.dylib', 'libggml.dylib']
+          : Platform.isWindows
+              ? ['ggml-base.dll', 'ggml-cpu.dll', 'ggml-cuda.dll', 'ggml.dll']
+              : <String>[];
+
+  for (final depLib in depLibs) {
+    for (final llamaPath in llamaPaths) {
+      final depPath = path.join(path.dirname(llamaPath), depLib);
+      if (File(depPath).existsSync()) {
+        try {
+          DynamicLibrary.open(depPath);
+          break; // Successfully loaded, move to next dependency
+        } catch (e) {
+          // Try next path
+        }
+      }
+    }
   }
 }
 
@@ -63,7 +92,13 @@ List<String> _getSearchPaths(String libraryName) {
   final scriptDir = path.dirname(Platform.script.toFilePath());
   paths.add(path.join(scriptDir, '..', 'src', libraryName));
 
-  // 5. Standard system paths
+  // 5. Package's linux/libs directory (for development with flutter plugin structure)
+  paths.add(path.join(scriptDir, '..', 'linux', 'libs', libraryName));
+  
+  // 6. Also try relative to the package root
+  paths.add(path.join(scriptDir, '..', '..', 'linux', 'libs', libraryName));
+
+  // 7. Standard system paths
   if (Platform.isLinux) {
     paths.addAll([
       '/usr/local/lib/$libraryName',
@@ -80,4 +115,3 @@ List<String> _getSearchPaths(String libraryName) {
 
   return paths;
 }
-

@@ -31,10 +31,16 @@ class LlamaCppModel {
     return _modelPtr;
   }
 
+  /// Gets the vocabulary from the model.
+  Pointer<llama_vocab> get vocab {
+    _checkNotDisposed();
+    return _bindings.llama_model_get_vocab(_modelPtr);
+  }
+
   /// Gets the vocabulary size.
   int get vocabSize {
     _checkNotDisposed();
-    return _bindings.llama_n_vocab(_modelPtr);
+    return _bindings.llama_n_vocab(vocab);
   }
 
   /// Gets the training context size.
@@ -52,37 +58,37 @@ class LlamaCppModel {
   /// Gets the beginning-of-sequence token.
   int get bosToken {
     _checkNotDisposed();
-    return _bindings.llama_token_bos(_modelPtr);
+    return _bindings.llama_token_bos(vocab);
   }
 
   /// Gets the end-of-sequence token.
   int get eosToken {
     _checkNotDisposed();
-    return _bindings.llama_token_eos(_modelPtr);
+    return _bindings.llama_token_eos(vocab);
   }
 
   /// Gets the newline token.
   int get nlToken {
     _checkNotDisposed();
-    return _bindings.llama_token_nl(_modelPtr);
+    return _bindings.llama_token_nl(vocab);
   }
 
   /// Gets the padding token.
   int get padToken {
     _checkNotDisposed();
-    return _bindings.llama_token_pad(_modelPtr);
+    return _bindings.llama_token_pad(vocab);
   }
 
   /// Checks if a token is an end-of-generation token.
   bool isEogToken(int token) {
     _checkNotDisposed();
-    return _bindings.llama_token_is_eog(_modelPtr, token);
+    return _bindings.llama_vocab_is_eog(vocab, token);
   }
 
   /// Checks if a token is a control token.
   bool isControlToken(int token) {
     _checkNotDisposed();
-    return _bindings.llama_token_is_control(_modelPtr, token);
+    return _bindings.llama_vocab_is_control(vocab, token);
   }
 
   /// Releases the model resources.

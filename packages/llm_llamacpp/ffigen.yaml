@@ -2,13 +2,14 @@ name: LlamaBindings
 description: FFI bindings for llama.cpp
 output: 'lib/src/bindings/llama_bindings.dart'
 
-# When llama.cpp submodule is added, change this to:
-# headers:
-#   entry-points:
-#     - 'llama.cpp/include/llama.h'
 headers:
   entry-points:
-    - 'src/llama.h'
+    - 'src/include/llama.h'
+  include-directives:
+    - 'src/include/llama.h'
+    - 'src/include/ggml.h'
+    - 'src/include/ggml-backend.h'
+    - 'src/include/ggml-cpu.h'
 
 preamble: |
   // AUTO-GENERATED FILE. DO NOT MODIFY.
@@ -19,27 +20,29 @@ preamble: |
 functions:
   include:
     - 'llama_.*'
-    - 'ggml_.*'
+  exclude:
+    - 'llama_grammar_.*'  # Exclude deprecated grammar functions
 
 structs:
   include:
     - 'llama_.*'
-    - 'ggml_.*'
+  exclude:
+    - 'llama_grammar'
 
 enums:
   include:
     - 'llama_.*'
-    - 'ggml_.*'
+    - 'ggml_type'
+    - 'ggml_backend_type'
 
 typedefs:
   include:
     - 'llama_.*'
-    - 'ggml_.*'
+    - 'ggml_type'
 
 macros:
   include:
     - 'LLAMA_.*'
-    - 'GGML_.*'
 
 comments:
   style: any
@@ -49,5 +52,6 @@ comments:
 silence-enum-warning: true
 
 compiler-opts:
+  - '-I/home/brynje/git/dart-ollama/packages/llm_llamacpp/src/include'
   - '-I/usr/include'
-
+  - '-DGGML_SHARED'
