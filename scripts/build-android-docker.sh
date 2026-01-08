@@ -20,8 +20,9 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # Build the Docker image (cached after first run)
+# Use --platform linux/amd64 because Android NDK only provides x86_64 host tools
 echo "Building Docker image (this may take a few minutes on first run)..."
-docker build -t llamacpp-android-builder -f "$SCRIPT_DIR/Dockerfile.android-build" "$PROJECT_ROOT"
+docker build --platform linux/amd64 -t llamacpp-android-builder -f "$SCRIPT_DIR/Dockerfile.android-build" "$PROJECT_ROOT"
 
 echo ""
 echo "Cleaning stale build caches (if any)..."
@@ -33,7 +34,9 @@ echo "Running build inside Docker container..."
 echo ""
 
 # Run the build
+# Use --platform linux/amd64 to ensure NDK tools work on Apple Silicon Macs
 docker run --rm \
+    --platform linux/amd64 \
     -v "$PROJECT_ROOT:/workspace" \
     -e BUILD_VULKAN=ON \
     -e BUILD_OPENCL=ON \
