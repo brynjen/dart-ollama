@@ -8,19 +8,36 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV ANDROID_NDK_HOME=/opt/android-sdk/ndk/26.3.11579264
-ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin"
+ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:/usr/local/bin"
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     git \
     cmake \
     ninja-build \
-    glslc \
+    glslang-tools \
     python3 \
     wget \
+    curl \
     unzip \
     openjdk-17-jdk \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# Install shaderc (provides glslc) - try package first, then build from source
+RUN apt-get update && apt-get install -y shaderc 2>/dev/null && rm -rf /var/lib/apt/lists/* || \
+    (echo "Building shaderc from source..." && \
+     git clone --depth 1 https://github.com/google/shaderc /tmp/shaderc && \
+     cd /tmp/shaderc && \
+     ./utils/git-sync-deps && \
+     mkdir build && cd build && \
+     cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DSHADERC_SKIP_TESTS=ON .. && \
+     ninja glslc && \
+     cp glslc/glslc /usr/local/bin/ && \
+     rm -rf /tmp/shaderc)
+
+# Verify glslc is available
+RUN which glslc && glslc --version
 
 # Download and install Android SDK command-line tools
 RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
