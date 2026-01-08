@@ -24,6 +24,11 @@ echo "Building Docker image (this may take a few minutes on first run)..."
 docker build -t llamacpp-android-builder -f "$SCRIPT_DIR/Dockerfile.android-build" "$PROJECT_ROOT"
 
 echo ""
+echo "Cleaning stale build caches (if any)..."
+# Remove any stale CMake caches that might have wrong paths
+rm -rf "$PROJECT_ROOT/build-android/deps" 2>/dev/null || true
+
+echo ""
 echo "Running build inside Docker container..."
 echo ""
 
