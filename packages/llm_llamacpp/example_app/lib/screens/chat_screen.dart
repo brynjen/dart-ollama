@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:llm_core/llm_core.dart';
 import 'package:llm_llamacpp/llm_llamacpp.dart';
+
+import '../tools/calculator_tool.dart';
 
 class ChatScreen extends StatefulWidget {
   final String modelPath;
@@ -19,8 +20,12 @@ class _ChatScreenState extends State<ChatScreen> {
   LlamaCppChatRepository? _chatRepo;
   bool _isLoading = true;
   bool _isGenerating = false;
+  bool _toolsEnabled = true;
   String? _errorMessage;
   String _currentResponse = '';
+  
+  // Available tools
+  final List<LLMTool> _tools = [CalculatorTool()];
 
   @override
   void initState() {
@@ -60,7 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // Add welcome message
       _messages.add(_ChatMessage(
         role: _MessageRole.system,
-        content: 'Model loaded successfully! You can start chatting.',
+        content: 'Model loaded! Tools are enabled. Try: "What is 15 multiplied by 7?"',
       ));
     } catch (e, stackTrace) {
       print('[ChatScreen] ERROR loading model: $e');
@@ -99,10 +104,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       // Build message history for the model
+      final systemPrompt = _toolsEnabled
+          ? '''You are a helpful assistant with access to tools.
+
+Available tools:
+- calculator: Performs basic math operations (add, subtract, multiply, divide)
+
+When you need to perform calculations, use the calculator tool by responding with JSON in this format:
+{"name": "calculator", "arguments": {"operation": "multiply", "a": 15, "b": 7}}
+
+After receiving the tool result, provide a natural language response to the user.'''
+          : 'You are a helpful assistant. Answer questions concisely and accurately.';
+      
       final llmMessages = <LLMMessage>[
         LLMMessage(
           role: LLMRole.system,
-          content: 'You are a helpful assistant. Answer questions concisely and accurately.',
+          content: systemPrompt,
         ),
       ];
       
@@ -125,6 +142,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final stream = _chatRepo!.streamChat(
         widget.modelPath,
         messages: llmMessages,
+        tools: _toolsEnabled ? _tools : [],
       );
 
       await for (final chunk in stream) {
@@ -166,6 +184,25 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          // Tools toggle
+          IconButton(
+            icon: Icon(
+              _toolsEnabled ? Icons.build : Icons.build_outlined,
+              color: _toolsEnabled ? theme.colorScheme.primary : null,
+            ),
+            onPressed: () {
+              setState(() {
+                _toolsEnabled = !_toolsEnabled;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(_toolsEnabled ? 'Tools enabled' : 'Tools disabled'),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+            },
+            tooltip: _toolsEnabled ? 'Disable tools' : 'Enable tools',
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () {

@@ -23,9 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _statusMessage = '';
   String? _errorMessage;
   
-  // Recommended small model for mobile testing
-  static const _defaultRepoId = 'Qwen/Qwen2.5-0.5B-Instruct-GGUF';
-  static const _defaultFileName = 'qwen2.5-0.5b-instruct-q4_k_m.gguf';
+  // Qwen3-VL-2B: Supports tool calling and vision
+  static const _defaultRepoId = 'ggml-org/Qwen3-VL-2B-Instruct-GGUF';
+  static const _defaultFileName = 'Qwen3-VL-2B-Instruct-Q8_0.gguf';
 
   @override
   void initState() {
@@ -220,133 +220,143 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Qwen2.5-0.5B-Instruct (Q4_K_M)',
+                          'Qwen3-VL-2B-Instruct (Q8_0)',
                           style: theme.textTheme.bodyLarge?.copyWith(
                             color: theme.colorScheme.primary,
                           ),
                         ),
                         Text(
-                          '~400 MB • Fast inference • Good quality',
+                          '~2.5 GB • Tool calling • Vision capable',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                         
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                         
-                        // Status
-                        if (_isLoading)
-                          const Center(child: CircularProgressIndicator())
-                        else if (_errorMessage != null)
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.errorContainer,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
+                        // Status area - expandable and scrollable
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.error_outline, 
-                                  color: theme.colorScheme.error),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    _errorMessage!,
-                                    style: TextStyle(
-                                      color: theme.colorScheme.onErrorContainer,
+                                if (_isLoading)
+                                  const Center(child: CircularProgressIndicator())
+                                else if (_errorMessage != null)
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.errorContainer,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(Icons.error_outline, 
+                                          color: theme.colorScheme.error),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _errorMessage!,
+                                            style: TextStyle(
+                                              color: theme.colorScheme.onErrorContainer,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else if (_isDownloading) ...[
+                                  // Download Progress
+                                  Text(
+                                    _statusMessage,
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: LinearProgressIndicator(
+                                      value: _downloadProgress,
+                                      minHeight: 8,
+                                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          )
-                        else if (_isDownloading) ...[
-                          // Download Progress
-                          Text(
-                            _statusMessage,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          const SizedBox(height: 16),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: LinearProgressIndicator(
-                              value: _downloadProgress,
-                              minHeight: 8,
-                              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${(_downloadProgress * 100).toStringAsFixed(1)}%',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ] else if (_modelPath != null) ...[
-                          // Model Ready
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.check_circle, 
-                                  color: theme.colorScheme.primary),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Model Ready',
-                                        style: theme.textTheme.titleSmall?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Text(
-                                        _modelPath!.split('/').last,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ] else ...[
-                          // No Model
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.download_rounded,
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    _statusMessage.isEmpty 
-                                      ? 'Download a model to get started'
-                                      : _statusMessage,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '${(_downloadProgress * 100).toStringAsFixed(1)}%',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                ),
+                                ] else if (_modelPath != null) ...[
+                                  // Model Ready
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.check_circle, 
+                                          color: theme.colorScheme.primary),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Model Ready',
+                                                style: theme.textTheme.titleSmall?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              Text(
+                                                _modelPath!.split('/').last,
+                                                style: theme.textTheme.bodySmall?.copyWith(
+                                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ] else ...[
+                                  // No Model
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.download_rounded,
+                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _statusMessage.isEmpty 
+                                              ? 'Download a model to get started'
+                                              : _statusMessage,
+                                            style: theme.textTheme.bodyMedium?.copyWith(
+                                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
-                        ],
+                        ),
                         
-                        const Spacer(),
+                        const SizedBox(height: 16),
                         
                         // Actions
                         Row(

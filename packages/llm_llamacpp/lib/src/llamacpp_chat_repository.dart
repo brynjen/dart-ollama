@@ -65,8 +65,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
   bool get isModelLoaded => _model != null;
 
   /// Gets the prompt template in use.
-  PromptTemplate get template =>
-      _template ?? (_model != null ? getTemplateForModel(_model!.path) : ChatMLTemplate());
+  PromptTemplate get template => _template ?? (_model != null ? getTemplateForModel(_model!.path) : ChatMLTemplate());
 
   /// Sets the prompt template to use.
   set template(PromptTemplate value) => _template = value;
@@ -88,10 +87,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
   ///
   /// [modelPath] - Path to the GGUF model file.
   /// [options] - Optional loading options.
-  Future<void> loadModel(
-    String modelPath, {
-    ModelLoadOptions options = const ModelLoadOptions(),
-  }) async {
+  Future<void> loadModel(String modelPath, {ModelLoadOptions options = const ModelLoadOptions()}) async {
     initializeBackend();
 
     // Unload any existing model
@@ -131,8 +127,19 @@ class LlamaCppChatRepository extends LLMChatRepository {
       throw ModelLoadException('No model loaded. Call loadModel() first.');
     }
 
+    final currentAttempts = toolAttempts ?? maxToolAttempts;
+    print('[LlamaCpp] streamChat called with ${tools.length} tools, attempt ${maxToolAttempts - currentAttempts + 1}');
+    print('[LlamaCpp] Messages count: ${messages.length}');
+    for (final msg in messages) {
+      print('[LlamaCpp]   - ${msg.role.name}: ${msg.content?.substring(0, msg.content!.length.clamp(0, 100))}...');
+    }
+
     // Format messages using the template
     final prompt = template.format(messages);
+    print('[LlamaCpp] Generated prompt (${prompt.length} chars):');
+    print('[LlamaCpp] --- PROMPT START ---');
+    print(prompt);
+    print('[LlamaCpp] --- PROMPT END ---');
 
     // Create a receive port to get tokens from the isolate
     final receivePort = ReceivePort();
@@ -159,24 +166,87 @@ class LlamaCppChatRepository extends LLMChatRepository {
     try {
       String accumulatedContent = '';
       List<LLMToolCall> collectedToolCalls = [];
+      // Buffer for detecting tool calls mid-stream
+      String pendingContent = '';
+      bool inPotentialToolCall = false;
 
       await for (final message in receivePort) {
         if (message is _InferenceToken) {
           accumulatedContent += message.token;
+          pendingContent += message.token;
 
+          // Check if we might be in a tool call
+          // Look for opening brace that might start a tool call JSON
+          if (!inPotentialToolCall && pendingContent.contains('{')) {
+            inPotentialToolCall = true;
+            print('[LlamaCpp] Detected potential tool call start');
+          }
+
+          // If we're in a potential tool call, buffer the content
+          if (inPotentialToolCall) {
+            // Check if we have a complete JSON object
+            final braceCount = _countBraces(pendingContent);
+            if (braceCount == 0 && pendingContent.contains('}')) {
+              // Potential complete JSON - try to parse
+              print('[LlamaCpp] Potential complete JSON, trying to parse: $pendingContent');
+              final toolCalls = _parseToolCalls(pendingContent);
+              if (toolCalls.isNotEmpty) {
+                print('[LlamaCpp] Found ${toolCalls.length} tool calls in buffered content!');
+                collectedToolCalls.addAll(toolCalls);
+                // Don't yield the tool call JSON to the user
+                pendingContent = '';
+                inPotentialToolCall = false;
+                continue;
+              } else {
+                // Not a valid tool call, yield the buffered content
+                print('[LlamaCpp] Not a valid tool call, yielding buffered content');
+                yield LLMChunk(
+                  model: model,
+                  createdAt: DateTime.now(),
+                  message: LLMChunkMessage(content: pendingContent, role: LLMRole.assistant),
+                  done: false,
+                );
+                pendingContent = '';
+                inPotentialToolCall = false;
+              }
+            }
+            // Keep buffering if braces aren't balanced
+            continue;
+          }
+
+          // Normal token - yield immediately
           yield LLMChunk(
             model: model,
             createdAt: DateTime.now(),
-            message: LLMChunkMessage(
-              content: message.token,
-              role: LLMRole.assistant,
-            ),
+            message: LLMChunkMessage(content: message.token, role: LLMRole.assistant),
             done: false,
           );
+          pendingContent = '';
         } else if (message is _InferenceComplete) {
-          // Check for tool calls in the response
-          if (tools.isNotEmpty) {
+          print('[LlamaCpp] Inference complete. Accumulated content (${accumulatedContent.length} chars):');
+          print('[LlamaCpp] --- RESPONSE START ---');
+          print(accumulatedContent);
+          print('[LlamaCpp] --- RESPONSE END ---');
+
+          // Yield any remaining buffered content
+          if (pendingContent.isNotEmpty) {
+            print('[LlamaCpp] Yielding remaining buffered content: $pendingContent');
+            yield LLMChunk(
+              model: model,
+              createdAt: DateTime.now(),
+              message: LLMChunkMessage(content: pendingContent, role: LLMRole.assistant),
+              done: false,
+            );
+          }
+
+          // Check for tool calls in the full response if none found during streaming
+          if (tools.isNotEmpty && collectedToolCalls.isEmpty) {
+            print('[LlamaCpp] Parsing tool calls from full response...');
             final parsedToolCalls = _parseToolCalls(accumulatedContent);
+            print('[LlamaCpp] Found ${parsedToolCalls.length} tool calls');
+            for (final tc in parsedToolCalls) {
+              print('[LlamaCpp]   - Tool: ${tc.name}, Args: ${tc.arguments}');
+            }
             if (parsedToolCalls.isNotEmpty) {
               collectedToolCalls.addAll(parsedToolCalls);
             }
@@ -185,11 +255,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
           yield LLMChunk(
             model: model,
             createdAt: DateTime.now(),
-            message: LLMChunkMessage(
-              content: null,
-              role: LLMRole.assistant,
-              toolCalls: collectedToolCalls.isEmpty ? null : collectedToolCalls,
-            ),
+            message: LLMChunkMessage(content: null, role: LLMRole.assistant, toolCalls: collectedToolCalls.isEmpty ? null : collectedToolCalls),
             done: true,
             promptEvalCount: message.promptTokens,
             evalCount: message.generatedTokens,
@@ -197,50 +263,48 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
           // Handle tool calls if any
           if (collectedToolCalls.isNotEmpty && tools.isNotEmpty) {
-            final currentAttempts = toolAttempts ?? maxToolAttempts;
+            print('[LlamaCpp] Executing ${collectedToolCalls.length} tool calls...');
             if (currentAttempts > 0) {
               final workingMessages = List<LLMMessage>.from(messages);
 
               // Add assistant message with tool calls
-              workingMessages.add(LLMMessage(
-                role: LLMRole.assistant,
-                content: accumulatedContent,
-              ));
+              workingMessages.add(LLMMessage(role: LLMRole.assistant, content: accumulatedContent));
 
               // Execute tools and add responses
               for (final toolCall in collectedToolCalls) {
+                print('[LlamaCpp] Executing tool: ${toolCall.name}');
                 final tool = tools.firstWhere(
                   (t) => t.name == toolCall.name,
-                  orElse: () =>
-                      throw Exception('Tool ${toolCall.name} not found'),
+                  orElse: () {
+                    print('[LlamaCpp] ERROR: Tool ${toolCall.name} not found!');
+                    throw Exception('Tool ${toolCall.name} not found');
+                  },
                 );
 
-                final toolResponse = await tool.execute(
-                      json.decode(toolCall.arguments),
-                      extra: extra,
-                    ) ??
-                    'Tool ${toolCall.name} returned null';
+                try {
+                  final args = json.decode(toolCall.arguments);
+                  print('[LlamaCpp] Tool args: $args');
+                  final toolResponse = await tool.execute(args, extra: extra) ?? 'Tool ${toolCall.name} returned null';
+                  print('[LlamaCpp] Tool response: $toolResponse');
 
-                workingMessages.add(LLMMessage(
-                  role: LLMRole.tool,
-                  content: toolResponse.toString(),
-                  toolCallId: toolCall.id,
-                ));
+                  workingMessages.add(LLMMessage(role: LLMRole.tool, content: toolResponse.toString(), toolCallId: toolCall.id));
+                } catch (e) {
+                  print('[LlamaCpp] Tool execution error: $e');
+                  workingMessages.add(LLMMessage(role: LLMRole.tool, content: 'Error executing tool: $e', toolCallId: toolCall.id));
+                }
               }
 
+              print('[LlamaCpp] Continuing conversation with tool results...');
               // Continue conversation with tool results
-              yield* streamChat(
-                model,
-                messages: workingMessages,
-                tools: tools,
-                extra: extra,
-                toolAttempts: currentAttempts - 1,
-              );
+              yield* streamChat(model, messages: workingMessages, tools: tools, extra: extra, toolAttempts: currentAttempts - 1);
+            } else {
+              print('[LlamaCpp] Max tool attempts reached, not continuing');
             }
           }
 
           break;
         } else if (message is _InferenceError) {
+          print('[LlamaCpp] ERROR: ${message.error}');
           throw Exception('Inference error: ${message.error}');
         }
       }
@@ -250,70 +314,130 @@ class LlamaCppChatRepository extends LLMChatRepository {
     }
   }
 
+  /// Count unbalanced braces in a string
+  int _countBraces(String s) {
+    int count = 0;
+    for (final c in s.codeUnits) {
+      if (c == 123) count++; // {
+      if (c == 125) count--; // }
+    }
+    return count;
+  }
+
   /// Parses tool calls from model output.
   ///
   /// This looks for JSON-formatted tool calls in the response.
   List<LLMToolCall> _parseToolCalls(String content) {
     final toolCalls = <LLMToolCall>[];
+    print('[LlamaCpp] _parseToolCalls input: $content');
 
-    // Look for JSON tool call patterns
-    // Common formats:
-    // 1. {"name": "tool_name", "arguments": {...}}
-    // 2. <tool_call>{"name": "tool_name", "arguments": {...}}</tool_call>
-    // 3. Action: tool_name\nAction Input: {...}
+    // Try to find and parse any JSON object that looks like a tool call
+    // First, try to find complete JSON objects
+    final jsonObjects = _extractJsonObjects(content);
+    print('[LlamaCpp] Found ${jsonObjects.length} JSON objects');
 
-    // Try JSON format
-    final jsonPattern = RegExp(
-      r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"arguments"\s*:\s*(\{[^{}]*\})[^{}]*\}',
-      multiLine: true,
-    );
-
-    for (final match in jsonPattern.allMatches(content)) {
+    for (final jsonStr in jsonObjects) {
+      print('[LlamaCpp] Trying to parse JSON: $jsonStr');
       try {
-        final name = match.group(1)!;
-        final args = match.group(2)!;
+        final data = json.decode(jsonStr) as Map<String, dynamic>;
 
-        toolCalls.add(LLMToolCall(
-          id: 'call_${toolCalls.length}',
-          name: name,
-          arguments: args,
-        ));
-      } catch (_) {
-        // Skip invalid matches
+        // Check if it's a tool call format
+        if (data.containsKey('name')) {
+          String? name;
+          String? arguments;
+
+          // Format 1: {"name": "tool", "arguments": {...}}
+          if (data.containsKey('arguments')) {
+            name = data['name'] as String;
+            final args = data['arguments'];
+            arguments = args is String ? args : json.encode(args);
+          }
+          // Format 2: {"name": "tool", "parameters": {...}}
+          else if (data.containsKey('parameters')) {
+            name = data['name'] as String;
+            final args = data['parameters'];
+            arguments = args is String ? args : json.encode(args);
+          }
+          // Format 3: {"name": "tool", "operation": "...", "a": ..., "b": ...}
+          // All other keys are arguments
+          else {
+            name = data['name'] as String;
+            final args = Map<String, dynamic>.from(data)..remove('name');
+            arguments = json.encode(args);
+          }
+
+          print('[LlamaCpp] Parsed tool call: name=$name, args=$arguments');
+          toolCalls.add(LLMToolCall(id: 'call_${toolCalls.length}', name: name, arguments: arguments));
+        }
+      } catch (e) {
+        print('[LlamaCpp] Failed to parse JSON: $e');
       }
     }
 
-    // Try XML-like format
-    final xmlPattern = RegExp(
-      r'<tool_call>\s*(\{.*?\})\s*</tool_call>',
-      multiLine: true,
-      dotAll: true,
-    );
+    // Try XML-like format: <tool_call>...</tool_call>
+    final xmlPattern = RegExp(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', multiLine: true, dotAll: true);
 
     for (final match in xmlPattern.allMatches(content)) {
       try {
         final jsonStr = match.group(1)!;
+        print('[LlamaCpp] Found XML-style tool call: $jsonStr');
         final data = json.decode(jsonStr) as Map<String, dynamic>;
 
-        toolCalls.add(LLMToolCall(
-          id: 'call_${toolCalls.length}',
-          name: data['name'] as String,
-          arguments: json.encode(data['arguments']),
-        ));
-      } catch (_) {
-        // Skip invalid matches
+        toolCalls.add(
+          LLMToolCall(id: 'call_${toolCalls.length}', name: data['name'] as String, arguments: json.encode(data['arguments'] ?? data['parameters'] ?? {})),
+        );
+      } catch (e) {
+        print('[LlamaCpp] Failed to parse XML-style tool call: $e');
       }
     }
 
+    // Try function call format: calculator({"operation": "multiply", ...})
+    final funcPattern = RegExp(r'(\w+)\s*\(\s*(\{[^}]+\})\s*\)', multiLine: true);
+
+    for (final match in funcPattern.allMatches(content)) {
+      try {
+        final name = match.group(1)!;
+        final argsStr = match.group(2)!;
+        print('[LlamaCpp] Found function-style call: $name($argsStr)');
+
+        // Verify it's valid JSON
+        json.decode(argsStr);
+
+        toolCalls.add(LLMToolCall(id: 'call_${toolCalls.length}', name: name, arguments: argsStr));
+      } catch (e) {
+        print('[LlamaCpp] Failed to parse function-style call: $e');
+      }
+    }
+
+    print('[LlamaCpp] Total tool calls found: ${toolCalls.length}');
     return toolCalls;
   }
 
+  /// Extract JSON objects from a string
+  List<String> _extractJsonObjects(String content) {
+    final objects = <String>[];
+    var depth = 0;
+    var start = -1;
+
+    for (var i = 0; i < content.length; i++) {
+      final c = content[i];
+      if (c == '{') {
+        if (depth == 0) start = i;
+        depth++;
+      } else if (c == '}') {
+        depth--;
+        if (depth == 0 && start >= 0) {
+          objects.add(content.substring(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+
+    return objects;
+  }
+
   @override
-  Future<List<LLMEmbedding>> embed({
-    required String model,
-    required List<String> messages,
-    Map<String, dynamic> options = const {},
-  }) async {
+  Future<List<LLMEmbedding>> embed({required String model, required List<String> messages, Map<String, dynamic> options = const {}}) async {
     // Embeddings require a different approach with llama.cpp
     // For now, throw unsupported
     throw UnsupportedError(
@@ -370,10 +494,7 @@ class _InferenceToken {
 }
 
 class _InferenceComplete {
-  _InferenceComplete({
-    required this.promptTokens,
-    required this.generatedTokens,
-  });
+  _InferenceComplete({required this.promptTokens, required this.generatedTokens});
   final int promptTokens;
   final int generatedTokens;
 }
@@ -396,10 +517,7 @@ void _runInference(_InferenceRequest request) {
     modelParams.n_gpu_layers = request.nGpuLayers;
 
     final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(
-      modelPathPtr.cast(),
-      modelParams,
-    );
+    final model = bindings.llama_load_model_from_file(modelPathPtr.cast(), modelParams);
     calloc.free(modelPathPtr);
 
     if (model == nullptr) {
@@ -460,19 +578,10 @@ void _runInference(_InferenceRequest request) {
       // Set up sampling chain
       final samplerParams = bindings.llama_sampler_chain_default_params();
       final sampler = bindings.llama_sampler_chain_init(samplerParams);
-      
-      bindings.llama_sampler_chain_add(
-        sampler,
-        bindings.llama_sampler_init_temp(request.temperature),
-      );
-      bindings.llama_sampler_chain_add(
-        sampler,
-        bindings.llama_sampler_init_top_k(request.topK),
-      );
-      bindings.llama_sampler_chain_add(
-        sampler,
-        bindings.llama_sampler_init_top_p(request.topP, 1),
-      );
+
+      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_temp(request.temperature));
+      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_k(request.topK));
+      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_p(request.topP, 1));
       bindings.llama_sampler_chain_add(
         sampler,
         bindings.llama_sampler_init_dist(42), // seed
@@ -536,10 +645,7 @@ void _runInference(_InferenceRequest request) {
       calloc.free(newTokenPtr);
       calloc.free(tokensPtr);
 
-      request.sendPort.send(_InferenceComplete(
-        promptTokens: nTokens,
-        generatedTokens: generatedTokens,
-      ));
+      request.sendPort.send(_InferenceComplete(promptTokens: nTokens, generatedTokens: generatedTokens));
     } finally {
       bindings.llama_free(ctx);
       bindings.llama_free_model(model);
