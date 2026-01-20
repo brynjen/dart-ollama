@@ -4,7 +4,7 @@
 # dart_ollama
 
 > ⚠️ **This package is deprecated and no longer maintained.**  
-> Please use **[dart-llm](https://pub.dev/packages/llm_ollama)** instead: https://github.com/brynjen/dart-llm
+> Please use **[llm_ollama](https://pub.dev/packages/llm_ollama)** instead: https://github.com/brynjen/dart-llm
 
 ---
 
