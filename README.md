@@ -3,6 +3,11 @@
 
 # dart_ollama
 
+> ⚠️ **This package is deprecated and no longer maintained.**  
+> Please use **[dart-llm](https://pub.dev/packages/dart_llm)** instead: https://github.com/brynjen/dart-llm
+
+---
+
 A Dart package for interacting with Ollama and ChatGPT APIs. This package provides a simple wrapper for both Ollama and ChatGPT APIs with support for streaming chat responses, tool/function calling, image support, and more.
 
 ## Features
@@ -14,13 +19,36 @@ A Dart package for interacting with Ollama and ChatGPT APIs. This package provid
 * 💭 **Thinking support** - Support for Ollama's thinking feature
 * 📦 **Easy to use** - Simple and intuitive API
 
+## Migration to dart-llm
+
+This package has been replaced by **[dart-llm](https://pub.dev/packages/dart_llm)**. Please migrate to the new package:
+
+1. Update your `pubspec.yaml`:
+   ```yaml
+   dependencies:
+     dart_llm: ^latest_version  # Replace dart_ollama with dart_llm
+   ```
+
+2. Update your imports:
+   ```dart
+   // Old
+   import 'package:dart_ollama/dart_ollama.dart';
+   
+   // New
+   import 'package:dart_llm/dart_llm.dart';
+   ```
+
+3. The API is largely compatible, but please refer to the [dart-llm documentation](https://github.com/brynjen/dart-llm) for any changes.
+
 ## Installation
+
+> ⚠️ **Note:** This package is deprecated. Please use [dart-llm](https://pub.dev/packages/dart_llm) instead.
 
 Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  dart_ollama: ^0.1.5
+  dart_ollama: ^0.1.6
 ```
 
 Then run:
